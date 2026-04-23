@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import { getHighAccuracyPosition, reverseGeocode, getDeviceInfo } from '../../lib/gps';
-import { ArrowLeft, Crosshair, CheckCircle2, Loader2, LogIn as InIcon, LogOut as OutIcon, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, Crosshair, CheckCircle2, Loader2, LogIn as InIcon, LogOut as OutIcon, AlertTriangle, MapPin } from 'lucide-react';
 import { toast } from 'sonner';
 import { sendNotificationBulk } from '../../hooks/useNotifications';
 
@@ -14,38 +14,50 @@ export default function ClockIn() {
   const tipo = state?.tipo || 'entrada';
   const [pos, setPos] = useState(null);
   const [address, setAddress] = useState('');
-  const [phase, setPhase] = useState('acquiring'); // acquiring | ready | saving | done | error
+  // idle (user must tap) | acquiring | ready | saving | done | error
+  const [phase, setPhase] = useState('idle');
   const [samples, setSamples] = useState(0);
   const [err, setErr] = useState(null);
 
-  useEffect(() => {
-    let active = true;
-    async function tick() {
+  // iOS / iPhone requires a user gesture to request geolocation from a PWA.
+  // So we DO NOT start watching until the user taps the button below.
+  async function startTracking() {
+    setPhase('acquiring');
+    setErr(null);
+    try {
+      const first = await getHighAccuracyPosition({ timeout: 20000 });
+      setPos(first);
+      setSamples(1);
+    } catch (e) {
+      setErr(e.message || 'Permiso denegado o GPS deshabilitado');
+      setPhase('error');
+      return;
+    }
+    // keep refining every 5s
+    const int = setInterval(async () => {
       try {
         const p = await getHighAccuracyPosition({ timeout: 15000 });
-        if (!active) return;
         setPos(p);
         setSamples((s) => s + 1);
-      } catch (e) {
-        if (!active) return;
-        setErr(e.message || 'Geolocalización fallida');
-        setPhase('error');
+      } catch {
+        /* keep previous */
       }
-    }
-    tick();
-    const int = setInterval(tick, 5000);
-    return () => { active = false; clearInterval(int); };
+    }, 5000);
+    // store interval id on the window for cleanup
+    window.__clockin_int = int;
+  }
+
+  useEffect(() => {
+    return () => { if (window.__clockin_int) { clearInterval(window.__clockin_int); window.__clockin_int = null; } };
   }, []);
 
   useEffect(() => {
-    if (!pos) return;
-    if (pos.coords.accuracy <= 50) {
+    if (!pos || phase === 'ready' || phase === 'saving' || phase === 'done') return;
+    if (pos.coords.accuracy <= 60) {
       setPhase('ready');
       if (!address) reverseGeocode(pos.coords.latitude, pos.coords.longitude).then(setAddress);
-    } else {
-      setPhase('acquiring');
     }
-  }, [pos, address]);
+  }, [pos, address, phase]);
 
   async function mark() {
     if (!pos) return;
@@ -64,7 +76,6 @@ export default function ClockIn() {
       const { error } = await supabase.from('marks').insert(payload);
       if (error) throw error;
 
-      // Also upsert live_positions so the admin map reflects it immediately.
       try {
         await supabase.from('live_positions').upsert({
           user_id: user.id,
@@ -84,6 +95,7 @@ export default function ClockIn() {
           link: '/admin',
         });
       }
+      if (window.__clockin_int) { clearInterval(window.__clockin_int); window.__clockin_int = null; }
       setPhase('done');
       toast.success(`Marcación de ${tipo} registrada`);
       setTimeout(() => nav('/app'), 1500);
@@ -93,29 +105,61 @@ export default function ClockIn() {
     }
   }
 
-  // Allow marking even with low precision after several attempts.
-  const canMarkLowPrecision = samples >= 3 && pos && pos.coords.accuracy > 50;
+  const lowPrecisionAvailable = samples >= 3 && pos && pos.coords.accuracy > 60;
 
   return (
     <div className="max-w-md mx-auto" data-testid="clockin-page">
-      <button onClick={() => nav(-1)} className="inline-flex items-center gap-2 text-xs text-zinc-400 hover:text-white mb-4"><ArrowLeft className="w-3.5 h-3.5" /> Volver</button>
+      <button onClick={() => nav(-1)} className="inline-flex items-center gap-2 text-xs text-zinc-400 hover:text-white mb-4">
+        <ArrowLeft className="w-3.5 h-3.5" /> Volver
+      </button>
+
       <div className="card-premium p-6 text-center fade-up">
         <p className="label-eyebrow">Marcación</p>
-        <h1 className="text-3xl font-black tracking-tight mt-1 mb-6">{tipo === 'entrada' ? 'Registrar entrada' : 'Registrar salida'}</h1>
+        <h1 className="text-3xl font-black tracking-tight mt-1 mb-6">
+          {tipo === 'entrada' ? 'Registrar entrada' : 'Registrar salida'}
+        </h1>
+
+        {phase === 'idle' && (
+          <div>
+            <div className="mx-auto w-36 h-36 rounded-full grid place-items-center bg-gold/10 border border-gold/30">
+              <MapPin className="w-14 h-14 text-gold" />
+            </div>
+            <p className="mt-5 text-lg font-bold">Activar ubicación</p>
+            <p className="text-sm text-zinc-400 mt-1 font-light">
+              Toca el botón y concede permiso al GPS de tu teléfono para continuar.
+            </p>
+            <button
+              onClick={startTracking}
+              className="btn-gold mt-6 w-full h-14 text-lg flex items-center justify-center gap-2"
+              data-testid="request-location-button"
+            >
+              <MapPin className="w-5 h-5" /> Obtener mi ubicación
+            </button>
+            <p className="text-[11px] text-zinc-500 mt-3">
+              En iPhone la primera vez aparece un diálogo pidiendo permiso al GPS.
+            </p>
+          </div>
+        )}
 
         {phase === 'acquiring' && (
-          <div className="py-10">
+          <div className="py-8">
             <div className="relative mx-auto w-36 h-36 grid place-items-center">
               <span className="absolute inset-0 rounded-full bg-gold/10 animate-ping" />
               <span className="absolute inset-4 rounded-full bg-gold/20 animate-pulse" />
               <Crosshair className="w-12 h-12 text-gold relative" />
             </div>
             <p className="mt-6 font-bold text-lg">Afinando precisión GPS…</p>
-            <p className="text-sm text-zinc-500 mt-1">Precisión actual: {pos?.coords?.accuracy ? `${Math.round(pos.coords.accuracy)} m` : 'detectando'}</p>
+            <p className="text-sm text-zinc-500 mt-1">
+              Precisión actual: {pos?.coords?.accuracy ? `${Math.round(pos.coords.accuracy)} m` : 'detectando'}
+            </p>
             <p className="text-[11px] text-zinc-600 mt-1">Muestras: {samples}</p>
 
-            {canMarkLowPrecision && (
-              <button onClick={mark} data-testid="mark-lowprec-button" className="btn-ghost mt-6">
+            {lowPrecisionAvailable && (
+              <button
+                onClick={mark}
+                data-testid="mark-lowprec-button"
+                className="btn-ghost mt-6"
+              >
                 Marcar igualmente (precisión aprox.)
               </button>
             )}
@@ -143,8 +187,13 @@ export default function ClockIn() {
             </div>
             <p className="mt-5 text-lg font-bold text-red-400">No se pudo obtener ubicación</p>
             <p className="text-sm text-zinc-400 mt-1">{err}</p>
-            <p className="text-xs text-zinc-500 mt-3">Activa el GPS y concede permisos de ubicación.</p>
-            <button onClick={() => window.location.reload()} data-testid="retry-mark-button" className="btn-gold mt-6 w-full">Reintentar</button>
+            <p className="text-xs text-zinc-500 mt-3">
+              En iPhone: <br />Ajustes → Safari → Ubicación → Permitir.<br />
+              También revisa Ajustes → Privacidad → Localización → Safari → Mientras se use.
+            </p>
+            <button onClick={() => { setPhase('idle'); setErr(null); setPos(null); setSamples(0); }} data-testid="retry-mark-button" className="btn-gold mt-6 w-full">
+              Reintentar
+            </button>
           </div>
         )}
 

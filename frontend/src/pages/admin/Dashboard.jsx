@@ -44,11 +44,13 @@ export default function Dashboard() {
 
   async function loadAll() {
     const today = todayISO();
+    const safe = (p) => p.then((r) => r).catch(() => ({ data: [] }));
+    const fifteenMinAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
     const [m, p, t, lp] = await Promise.all([
-      supabase.from('marks').select('*, profiles:user_id(nombre,foto_perfil,email)').eq('fecha', today).order('created_at', { ascending: false }),
-      supabase.from('profiles').select('*').eq('activo', true),
-      supabase.from('tasks').select('*, assignee:assignee_id(nombre)').order('created_at', { ascending: false }).limit(30),
-      supabase.from('live_positions').select('*').gte('updated_at', new Date(Date.now() - 15 * 60 * 1000).toISOString()),
+      safe(supabase.from('marks').select('*, profiles:user_id(nombre,foto_perfil,email)').eq('fecha', today).order('created_at', { ascending: false })),
+      safe(supabase.from('profiles').select('*').eq('activo', true)),
+      safe(supabase.from('tasks').select('*, assignee:assignee_id(nombre)').order('created_at', { ascending: false }).limit(30)),
+      safe(supabase.from('live_positions').select('*').gte('updated_at', fifteenMinAgo)),
     ]);
     setMarks(m.data || []);
     setPersonal(p.data || []);
@@ -58,10 +60,13 @@ export default function Dashboard() {
 
   useEffect(() => { loadAll(); }, []);
   useRealtime('dash_marks', (ch) => {
-    ch.on('postgres_changes', { event: '*', schema: 'public', table: 'marks' }, loadAll)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, loadAll)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, loadAll)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'live_positions' }, loadAll);
+    // Wrap each .on() so that a missing table in the realtime publication
+    // (e.g. live_positions not migrated yet) doesn't break the whole channel.
+    const safeOn = (...args) => { try { ch.on(...args); } catch (e) { /* noop */ } };
+    safeOn('postgres_changes', { event: '*', schema: 'public', table: 'marks' }, loadAll);
+    safeOn('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, loadAll);
+    safeOn('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, loadAll);
+    safeOn('postgres_changes', { event: '*', schema: 'public', table: 'live_positions' }, loadAll);
   }, []);
 
   const sinMarcar = useMemo(() => {

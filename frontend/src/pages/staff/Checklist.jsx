@@ -4,7 +4,7 @@ import { useRealtime } from '../../hooks/useRealtime';
 import { useAuth } from '../../contexts/AuthContext';
 import { Input } from '../../components/ui/input';
 import { Checkbox } from '../../components/ui/checkbox';
-import { Plus, Trash2, Repeat, CheckSquare } from 'lucide-react';
+import { Plus, Trash2, Repeat, CheckSquare, Loader2 } from 'lucide-react';
 import { todayISO, formatDateEs } from '../../lib/format';
 import { toast } from 'sonner';
 
@@ -13,38 +13,78 @@ export default function Checklist() {
   const [items, setItems] = useState([]);
   const [text, setText] = useState('');
   const [repetible, setRepetible] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
 
   async function load() {
-    // Auto-generate today's repeatable items if missing.
-    const { data: rep } = await supabase.from('checklists').select('titulo').eq('user_id', user.id).eq('repetible', true);
-    const uniqueTitles = [...new Set((rep || []).map((r) => r.titulo))];
-    for (const titulo of uniqueTitles) {
-      const { count } = await supabase.from('checklists').select('id', { count: 'exact', head: true })
-        .eq('user_id', user.id).eq('fecha', todayISO()).eq('titulo', titulo);
-      if ((count || 0) === 0) {
-        await supabase.from('checklists').insert({ user_id: user.id, titulo, repetible: true, fecha: todayISO() });
-      }
+    if (!user) return;
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('checklists')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('fecha', { ascending: false })
+        .order('created_at');
+      if (error) throw error;
+      setItems(data || []);
+      // Auto-generate today's repeatable items (non-blocking).
+      autoGenerateRepeatables(data || []).catch(() => {});
+    } catch (e) {
+      toast.error(e.message || 'No se pudo cargar');
+      setItems([]);
+    } finally {
+      setLoading(false);
     }
-    const { data } = await supabase.from('checklists').select('*').eq('user_id', user.id).order('fecha', { ascending: false }).order('created_at');
-    setItems(data || []);
   }
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
+
+  async function autoGenerateRepeatables(currentItems) {
+    const today = todayISO();
+    const repetibleTitles = [...new Set(currentItems.filter((i) => i.repetible).map((i) => i.titulo))];
+    const todayTitles = new Set(currentItems.filter((i) => i.fecha === today).map((i) => i.titulo));
+    const toAdd = repetibleTitles.filter((t) => !todayTitles.has(t));
+    if (toAdd.length === 0) return;
+    await supabase.from('checklists').insert(
+      toAdd.map((titulo) => ({ user_id: user.id, titulo, repetible: true, fecha: today }))
+    );
+  }
+
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [user?.id]);
+
   useRealtime(user ? `staff_checklist_${user.id}` : 'staff_checklist', (ch) => {
     if (!user) return;
     ch.on('postgres_changes', { event: '*', schema: 'public', table: 'checklists', filter: `user_id=eq.${user.id}` }, load);
   }, [user?.id]);
 
   async function add() {
+    if (!user) { toast.error('Sesión no lista'); return; }
     if (!text.trim()) return;
-    await supabase.from('checklists').insert({ user_id: user.id, titulo: text.trim(), repetible, fecha: todayISO() });
-    setText(''); setRepetible(false);
-    toast.success('Añadido');
+    setSaving(true);
+    try {
+      const { error } = await supabase
+        .from('checklists')
+        .insert({ user_id: user.id, titulo: text.trim(), repetible, fecha: todayISO() });
+      if (error) throw error;
+      setText('');
+      setRepetible(false);
+      toast.success('Añadido');
+      await load();
+    } catch (e) {
+      toast.error(`No se pudo guardar: ${e.message || e}`);
+    } finally {
+      setSaving(false);
+    }
   }
+
   async function toggle(i) {
-    await supabase.from('checklists').update({ completado: !i.completado }).eq('id', i.id);
+    try {
+      await supabase.from('checklists').update({ completado: !i.completado }).eq('id', i.id);
+    } catch (e) { toast.error(e.message); }
   }
   async function del(i) {
-    await supabase.from('checklists').delete().eq('id', i.id);
+    try {
+      await supabase.from('checklists').delete().eq('id', i.id);
+    } catch (e) { toast.error(e.message); }
   }
 
   const groups = items.reduce((acc, it) => { (acc[it.fecha] ||= []).push(it); return acc; }, {});
@@ -52,15 +92,24 @@ export default function Checklist() {
   return (
     <div className="space-y-5" data-testid="staff-checklist-page">
       <form onSubmit={(e) => { e.preventDefault(); add(); }} className="card-premium p-4 flex gap-2 flex-wrap">
-        <Input value={text} onChange={(e) => setText(e.target.value)} placeholder="Nuevo pendiente…" className="flex-1 bg-panel border-white/10 rounded-xl h-11" data-testid="checklist-input" />
+        <Input value={text} onChange={(e) => setText(e.target.value)} placeholder="Nuevo pendiente…"
+          className="flex-1 bg-panel border-white/10 rounded-xl h-11" data-testid="checklist-input" />
         <label className="flex items-center gap-2 text-xs text-zinc-400">
           <Checkbox checked={repetible} onCheckedChange={(v) => setRepetible(!!v)} data-testid="checklist-repetible" />
           <Repeat className="w-3.5 h-3.5" /> Diario
         </label>
-        <button type="submit" className="btn-gold flex items-center gap-2" data-testid="checklist-add-button"><Plus className="w-4 h-4" /> Añadir</button>
+        <button type="submit" disabled={saving || !text.trim()} className="btn-gold flex items-center gap-2" data-testid="checklist-add-button">
+          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Añadir
+        </button>
       </form>
 
-      {Object.keys(groups).length === 0 && (
+      {loading && (
+        <div className="py-8 text-center text-zinc-500 flex items-center justify-center gap-2">
+          <Loader2 className="w-4 h-4 animate-spin" /> Cargando…
+        </div>
+      )}
+
+      {!loading && Object.keys(groups).length === 0 && (
         <div className="card-premium p-10 text-center text-zinc-500"><CheckSquare className="w-8 h-8 mx-auto mb-2 opacity-50" /><p>Sin pendientes aún.</p></div>
       )}
 

@@ -1,6 +1,6 @@
-// ALFATWIN service worker — offline cache + web push.
-const CACHE = 'alfatwin-v1';
-const CORE = ['/', '/index.html', '/manifest.json', '/icons/icon-192.png', '/icons/icon-512.png'];
+// ALFATWIN service worker v3 — network-first for JS/HTML, cache for static assets.
+const CACHE = 'alfatwin-v3';
+const CORE = ['/manifest.json', '/icons/icon-192.png', '/icons/icon-512.png'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(CORE)).catch(() => {}));
@@ -8,7 +8,11 @@ self.addEventListener('install', (e) => {
 });
 
 self.addEventListener('activate', (e) => {
-  e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))));
+  e.waitUntil(
+    caches.keys().then((keys) =>
+      Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))
+    )
+  );
   self.clients.claim();
 });
 
@@ -16,20 +20,34 @@ self.addEventListener('fetch', (e) => {
   const req = e.request;
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
-  if (url.origin !== self.location.origin) return; // let supabase/unsplash/etc pass through
-  e.respondWith(
-    caches.match(req).then(
-      (cached) =>
+  if (url.origin !== self.location.origin) return;
+
+  const isStatic = /\.(png|jpg|jpeg|webp|svg|ico|woff2?)$/.test(url.pathname) ||
+                   url.pathname.startsWith('/icons/') ||
+                   url.pathname.startsWith('/static/media/');
+
+  if (isStatic) {
+    // cache-first for binary/static
+    e.respondWith(
+      caches.match(req).then((cached) =>
         cached ||
-        fetch(req)
-          .then((res) => {
-            const copy = res.clone();
-            caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
-            return res;
-          })
-          .catch(() => cached)
-    )
-  );
+        fetch(req).then((res) => {
+          const copy = res.clone();
+          caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
+          return res;
+        })
+      )
+    );
+  } else {
+    // network-first for HTML, JS, CSS, API
+    e.respondWith(
+      fetch(req).then((res) => {
+        const copy = res.clone();
+        caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
+        return res;
+      }).catch(() => caches.match(req))
+    );
+  }
 });
 
 self.addEventListener('push', (e) => {
@@ -53,4 +71,8 @@ self.addEventListener('notificationclick', (e) => {
     for (const c of list) { if ('focus' in c) return c.navigate(link).then(() => c.focus()); }
     if (clients.openWindow) return clients.openWindow(link);
   }));
+});
+
+self.addEventListener('message', (e) => {
+  if (e.data === 'SKIP_WAITING') self.skipWaiting();
 });

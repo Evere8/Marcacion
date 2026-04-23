@@ -9,22 +9,48 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   async function loadProfile(userId) {
-    const { data } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
-    setProfile(data || null);
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .maybeSingle();
+      if (error) {
+        // eslint-disable-next-line no-console
+        console.warn('[auth] loadProfile error:', error);
+        setProfile(null);
+        return;
+      }
+      setProfile(data || null);
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn('[auth] loadProfile threw:', e);
+      setProfile(null);
+    }
   }
 
   useEffect(() => {
-    supabase.auth.getSession().then(async ({ data }) => {
-      setSession(data.session);
-      if (data.session?.user) await loadProfile(data.session.user.id);
-      setLoading(false);
-    });
+    let alive = true;
+
+    (async () => {
+      try {
+        const { data } = await supabase.auth.getSession();
+        if (!alive) return;
+        setSession(data.session || null);
+        if (data.session?.user) await loadProfile(data.session.user.id);
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+
     const { data: sub } = supabase.auth.onAuthStateChange(async (_ev, s) => {
-      setSession(s);
+      if (!alive) return;
+      setSession(s || null);
       if (s?.user) await loadProfile(s.user.id);
       else setProfile(null);
     });
-    return () => sub.subscription.unsubscribe();
+
+    return () => { alive = false; sub.subscription.unsubscribe(); };
   }, []);
 
   async function signIn(email, password) {
@@ -37,7 +63,15 @@ export function AuthProvider({ children }) {
     setProfile(null);
   }
 
-  const value = { session, profile, user: session?.user || null, loading, signIn, signOut, refreshProfile: () => session?.user && loadProfile(session.user.id) };
+  const value = {
+    session,
+    profile,
+    user: session?.user || null,
+    loading,
+    signIn,
+    signOut,
+    refreshProfile: () => session?.user && loadProfile(session.user.id),
+  };
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
