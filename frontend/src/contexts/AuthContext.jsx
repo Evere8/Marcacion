@@ -17,7 +17,7 @@ export function AuthProvider({ children }) {
         .maybeSingle();
       if (error) {
         // eslint-disable-next-line no-console
-        console.warn('[auth] loadProfile error:', error);
+        console.warn('[auth] loadProfile error:', error.message);
         setProfile(null);
         return;
       }
@@ -32,12 +32,19 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     let alive = true;
 
+    // Failsafe: guarantee we NEVER get stuck on "Cargando…"
+    const failsafe = setTimeout(() => { if (alive) setLoading(false); }, 9000);
+
     (async () => {
       try {
         const { data } = await supabase.auth.getSession();
         if (!alive) return;
-        setSession(data.session || null);
-        if (data.session?.user) await loadProfile(data.session.user.id);
+        const s = data?.session || null;
+        setSession(s);
+        if (s?.user) await loadProfile(s.user.id);
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.warn('[auth] getSession error:', e);
       } finally {
         if (alive) setLoading(false);
       }
@@ -46,11 +53,18 @@ export function AuthProvider({ children }) {
     const { data: sub } = supabase.auth.onAuthStateChange(async (_ev, s) => {
       if (!alive) return;
       setSession(s || null);
-      if (s?.user) await loadProfile(s.user.id);
-      else setProfile(null);
+      if (s?.user) {
+        try { await loadProfile(s.user.id); } catch {}
+      } else {
+        setProfile(null);
+      }
     });
 
-    return () => { alive = false; sub.subscription.unsubscribe(); };
+    return () => {
+      alive = false;
+      clearTimeout(failsafe);
+      sub.subscription.unsubscribe();
+    };
   }, []);
 
   async function signIn(email, password) {
@@ -58,9 +72,13 @@ export function AuthProvider({ children }) {
     if (error) throw error;
     return data;
   }
+
   async function signOut() {
-    await supabase.auth.signOut();
+    try { await supabase.auth.signOut(); } catch {}
+    setSession(null);
     setProfile(null);
+    // Hard-reset to login to avoid any stuck state
+    window.location.replace('/login');
   }
 
   const value = {

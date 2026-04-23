@@ -3,9 +3,11 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import { getHighAccuracyPosition, reverseGeocode, getDeviceInfo } from '../../lib/gps';
-import { ArrowLeft, Crosshair, CheckCircle2, Loader2, LogIn as InIcon, LogOut as OutIcon, AlertTriangle, MapPin } from 'lucide-react';
+import { ArrowLeft, Crosshair, CheckCircle2, Loader2, LogIn as InIcon, LogOut as OutIcon, AlertTriangle, MapPin, Radio } from 'lucide-react';
 import { toast } from 'sonner';
 import { sendNotificationBulk } from '../../hooks/useNotifications';
+import { hasAnsweredLocationSharing, setLocationSharingEnabled } from '../../hooks/useLocationTracker';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '../../components/ui/dialog';
 
 export default function ClockIn() {
   const { user, profile } = useAuth();
@@ -18,6 +20,7 @@ export default function ClockIn() {
   const [phase, setPhase] = useState('idle');
   const [samples, setSamples] = useState(0);
   const [err, setErr] = useState(null);
+  const [askShare, setAskShare] = useState(false);
 
   // iOS / iPhone requires a user gesture to request geolocation from a PWA.
   // So we DO NOT start watching until the user taps the button below.
@@ -98,7 +101,12 @@ export default function ClockIn() {
       if (window.__clockin_int) { clearInterval(window.__clockin_int); window.__clockin_int = null; }
       setPhase('done');
       toast.success(`Marcación de ${tipo} registrada`);
-      setTimeout(() => nav('/app'), 1500);
+      // First-time: ask for background location consent AFTER successful mark.
+      if (tipo === 'entrada' && !hasAnsweredLocationSharing()) {
+        setTimeout(() => setAskShare(true), 700);
+      } else {
+        setTimeout(() => nav('/app'), 1500);
+      }
     } catch (e) {
       toast.error(e.message || 'Error');
       setPhase('ready');
@@ -208,6 +216,32 @@ export default function ClockIn() {
           </div>
         )}
       </div>
+
+      <Dialog open={askShare} onOpenChange={(o) => { if (!o) { setAskShare(false); setTimeout(() => nav('/app'), 300); } }}>
+        <DialogContent className="bg-surface border-white/10 max-w-md" data-testid="location-consent-dialog">
+          <DialogHeader>
+            <div className="w-14 h-14 rounded-full bg-gold/15 text-gold grid place-items-center mb-3"><Radio className="w-6 h-6" /></div>
+            <DialogTitle className="text-2xl font-black">¿Compartir ubicación en tiempo real?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-zinc-400 font-light">
+            Si aceptas, tu ubicación se mostrará al administrador en el mapa del panel mientras la app esté abierta.
+            Esto ayuda a coordinar tu jornada. Puedes cambiar esta preferencia en cualquier momento.
+          </p>
+          <p className="text-xs text-zinc-500 mt-2">Solo se comparte mientras la app está activa.</p>
+          <DialogFooter className="!flex-col sm:!flex-row gap-2">
+            <button
+              onClick={() => { setLocationSharingEnabled(false); setAskShare(false); toast.message('Ubicación en vivo desactivada'); setTimeout(() => { nav('/app'); window.location.reload(); }, 400); }}
+              className="btn-ghost w-full sm:w-auto"
+              data-testid="consent-deny"
+            >No, solo marcar</button>
+            <button
+              onClick={() => { setLocationSharingEnabled(true); setAskShare(false); toast.success('Ubicación en vivo activada'); setTimeout(() => { nav('/app'); window.location.reload(); }, 400); }}
+              className="btn-gold w-full sm:w-auto flex items-center justify-center gap-2"
+              data-testid="consent-accept"
+            ><Radio className="w-4 h-4" /> Sí, compartir en vivo</button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

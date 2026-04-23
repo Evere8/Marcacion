@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useRealtime } from '../../hooks/useRealtime';
 import { useAuth } from '../../contexts/AuthContext';
@@ -15,10 +15,12 @@ export default function Checklist() {
   const [repetible, setRepetible] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const loadedOnce = useRef(false);
 
-  async function load() {
+  async function refresh(silent = false) {
     if (!user) return;
-    setLoading(true);
+    if (!silent) setLoading(true);
+    const failsafe = setTimeout(() => setLoading(false), 8000);
     try {
       const { data, error } = await supabase
         .from('checklists')
@@ -28,47 +30,53 @@ export default function Checklist() {
         .order('created_at');
       if (error) throw error;
       setItems(data || []);
-      // Auto-generate today's repeatable items (non-blocking).
+      loadedOnce.current = true;
       autoGenerateRepeatables(data || []).catch(() => {});
     } catch (e) {
-      toast.error(e.message || 'No se pudo cargar');
-      setItems([]);
+      if (!silent) toast.error(e.message || 'No se pudo cargar');
     } finally {
+      clearTimeout(failsafe);
       setLoading(false);
     }
   }
 
-  async function autoGenerateRepeatables(currentItems) {
+  async function autoGenerateRepeatables(current) {
     const today = todayISO();
-    const repetibleTitles = [...new Set(currentItems.filter((i) => i.repetible).map((i) => i.titulo))];
-    const todayTitles = new Set(currentItems.filter((i) => i.fecha === today).map((i) => i.titulo));
-    const toAdd = repetibleTitles.filter((t) => !todayTitles.has(t));
-    if (toAdd.length === 0) return;
+    const repetibles = [...new Set(current.filter((i) => i.repetible).map((i) => i.titulo))];
+    const todayTitles = new Set(current.filter((i) => i.fecha === today).map((i) => i.titulo));
+    const missing = repetibles.filter((t) => !todayTitles.has(t));
+    if (missing.length === 0) return;
     await supabase.from('checklists').insert(
-      toAdd.map((titulo) => ({ user_id: user.id, titulo, repetible: true, fecha: today }))
+      missing.map((titulo) => ({ user_id: user.id, titulo, repetible: true, fecha: today }))
     );
   }
 
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [user?.id]);
+  useEffect(() => {
+    if (!user) return;
+    refresh(false);
+    // eslint-disable-next-line
+  }, [user?.id]);
 
   useRealtime(user ? `staff_checklist_${user.id}` : 'staff_checklist', (ch) => {
     if (!user) return;
-    ch.on('postgres_changes', { event: '*', schema: 'public', table: 'checklists', filter: `user_id=eq.${user.id}` }, load);
+    ch.on('postgres_changes', { event: '*', schema: 'public', table: 'checklists', filter: `user_id=eq.${user.id}` },
+      () => refresh(true));
   }, [user?.id]);
 
   async function add() {
-    if (!user) { toast.error('Sesión no lista'); return; }
-    if (!text.trim()) return;
+    if (!user || !text.trim()) return;
     setSaving(true);
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('checklists')
-        .insert({ user_id: user.id, titulo: text.trim(), repetible, fecha: todayISO() });
+        .insert({ user_id: user.id, titulo: text.trim(), repetible, fecha: todayISO() })
+        .select()
+        .single();
       if (error) throw error;
+      setItems((prev) => [data, ...prev]);
       setText('');
       setRepetible(false);
       toast.success('Añadido');
-      await load();
     } catch (e) {
       toast.error(`No se pudo guardar: ${e.message || e}`);
     } finally {
@@ -77,14 +85,41 @@ export default function Checklist() {
   }
 
   async function toggle(i) {
+    // Optimistic UI
+    setItems((prev) => prev.map((x) => (x.id === i.id ? { ...x, completado: !i.completado } : x)));
     try {
-      await supabase.from('checklists').update({ completado: !i.completado }).eq('id', i.id);
-    } catch (e) { toast.error(e.message); }
+      const { error } = await supabase.from('checklists').update({ completado: !i.completado }).eq('id', i.id);
+      if (error) throw error;
+    } catch (e) {
+      setItems((prev) => prev.map((x) => (x.id === i.id ? i : x))); // revert
+      toast.error(e.message);
+    }
   }
-  async function del(i) {
+
+  async function editTitulo(i) {
+    const nuevo = window.prompt('Editar pendiente', i.titulo);
+    if (nuevo == null || !nuevo.trim() || nuevo.trim() === i.titulo) return;
+    setItems((prev) => prev.map((x) => (x.id === i.id ? { ...x, titulo: nuevo.trim() } : x)));
     try {
-      await supabase.from('checklists').delete().eq('id', i.id);
-    } catch (e) { toast.error(e.message); }
+      const { error } = await supabase.from('checklists').update({ titulo: nuevo.trim() }).eq('id', i.id);
+      if (error) throw error;
+      toast.success('Editado');
+    } catch (e) {
+      setItems((prev) => prev.map((x) => (x.id === i.id ? i : x)));
+      toast.error(e.message);
+    }
+  }
+
+  async function del(i) {
+    if (!window.confirm('Eliminar pendiente?')) return;
+    setItems((prev) => prev.filter((x) => x.id !== i.id));
+    try {
+      const { error } = await supabase.from('checklists').delete().eq('id', i.id);
+      if (error) throw error;
+    } catch (e) {
+      toast.error(e.message);
+      refresh(true);
+    }
   }
 
   const groups = items.reduce((acc, it) => { (acc[it.fecha] ||= []).push(it); return acc; }, {});
@@ -103,14 +138,16 @@ export default function Checklist() {
         </button>
       </form>
 
-      {loading && (
+      {loading && !loadedOnce.current && (
         <div className="py-8 text-center text-zinc-500 flex items-center justify-center gap-2">
           <Loader2 className="w-4 h-4 animate-spin" /> Cargando…
         </div>
       )}
 
-      {!loading && Object.keys(groups).length === 0 && (
-        <div className="card-premium p-10 text-center text-zinc-500"><CheckSquare className="w-8 h-8 mx-auto mb-2 opacity-50" /><p>Sin pendientes aún.</p></div>
+      {!loading && loadedOnce.current && Object.keys(groups).length === 0 && (
+        <div className="card-premium p-10 text-center text-zinc-500">
+          <CheckSquare className="w-8 h-8 mx-auto mb-2 opacity-50" /><p>Sin pendientes aún.</p>
+        </div>
       )}
 
       {Object.entries(groups).map(([fecha, list]) => (
@@ -118,11 +155,38 @@ export default function Checklist() {
           <p className="label-eyebrow mb-2">{fecha === todayISO() ? 'Hoy' : formatDateEs(fecha)}</p>
           <div className="space-y-2">
             {list.map((i) => (
-              <div key={i.id} className={`card-premium p-3 flex items-center gap-3 ${i.completado ? 'opacity-60' : ''}`} data-testid={`checklist-item-${i.id}`}>
-                <Checkbox checked={i.completado} onCheckedChange={() => toggle(i)} className="border-white/20" data-testid={`checklist-toggle-${i.id}`} />
-                <p className={`flex-1 text-sm ${i.completado ? 'line-through text-zinc-500' : ''}`}>{i.titulo}</p>
-                {i.repetible && <Repeat className="w-3.5 h-3.5 text-gold" />}
-                <button onClick={() => del(i)} className="p-2 hover:bg-red-500/10 rounded-lg" data-testid={`checklist-delete-${i.id}`}><Trash2 className="w-3.5 h-3.5 text-red-400" /></button>
+              <div key={i.id}
+                className={`card-premium p-3 flex items-center gap-3 ${i.completado ? 'opacity-60' : ''}`}
+                data-testid={`checklist-item-${i.id}`}>
+                <button
+                  type="button"
+                  onClick={() => toggle(i)}
+                  aria-label={i.completado ? 'Desmarcar' : 'Completar'}
+                  className={`shrink-0 w-7 h-7 rounded-md border flex items-center justify-center transition-all ${
+                    i.completado ? 'bg-gold border-gold text-obsidian' : 'bg-transparent border-white/30 hover:border-gold'
+                  }`}
+                  data-testid={`checklist-toggle-${i.id}`}
+                >
+                  {i.completado && <CheckSquare className="w-4 h-4" />}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => editTitulo(i)}
+                  className={`flex-1 text-sm text-left ${i.completado ? 'line-through text-zinc-500' : 'text-white'}`}
+                  data-testid={`checklist-edit-${i.id}`}
+                >
+                  {i.titulo}
+                </button>
+                {i.repetible && <Repeat className="w-3.5 h-3.5 text-gold shrink-0" />}
+                <button
+                  type="button"
+                  onClick={() => del(i)}
+                  className="shrink-0 w-8 h-8 grid place-items-center hover:bg-red-500/10 rounded-lg"
+                  data-testid={`checklist-delete-${i.id}`}
+                  aria-label="Eliminar"
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                </button>
               </div>
             ))}
           </div>

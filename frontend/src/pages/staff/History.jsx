@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useRealtime } from '../../hooks/useRealtime';
 import { useAuth } from '../../contexts/AuthContext';
@@ -11,11 +11,13 @@ export default function History() {
   const { user } = useAuth();
   const [range, setRange] = useState('dia');
   const [rows, setRows] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const loadedOnce = useRef(false);
 
-  async function load() {
+  async function refresh(silent = false) {
     if (!user) return;
-    setLoading(true);
+    if (!silent) setLoading(true);
+    const failsafe = setTimeout(() => setLoading(false), 8000);
     try {
       const today = new Date();
       let from = new Date();
@@ -31,28 +33,36 @@ export default function History() {
         .order('hora', { ascending: false });
       if (error) throw error;
       setRows(data || []);
+      loadedOnce.current = true;
     } catch (e) {
-      toast.error(`Error al cargar: ${e.message || e}`);
-      setRows([]);
+      if (!silent) toast.error(`Error al cargar: ${e.message || e}`);
     } finally {
+      clearTimeout(failsafe);
       setLoading(false);
     }
   }
 
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [range, user?.id]);
+  useEffect(() => {
+    if (!user) return;
+    refresh(false);
+    // eslint-disable-next-line
+  }, [range, user?.id]);
 
   useRealtime(user ? `staff_history_${user.id}` : 'staff_history', (ch) => {
     if (!user) return;
-    ch.on('postgres_changes', { event: '*', schema: 'public', table: 'marks', filter: `user_id=eq.${user.id}` }, load);
+    ch.on('postgres_changes', { event: '*', schema: 'public', table: 'marks', filter: `user_id=eq.${user.id}` },
+      () => refresh(true));
   }, [user?.id]);
 
   async function del(r) {
     if (r.fecha !== todayISO()) { toast.error('Solo puedes borrar marcaciones del día.'); return; }
     if (!window.confirm('Eliminar marcación?')) return;
+    setRows((p) => p.filter((x) => x.id !== r.id));
     try {
-      await supabase.from('marks').delete().eq('id', r.id);
+      const { error } = await supabase.from('marks').delete().eq('id', r.id);
+      if (error) throw error;
       toast.success('Eliminada');
-    } catch (e) { toast.error(e.message); }
+    } catch (e) { toast.error(e.message); refresh(true); }
   }
   async function editHora(r) {
     if (r.fecha !== todayISO()) { toast.error('Solo puedes editar marcaciones del día.'); return; }
@@ -74,12 +84,14 @@ export default function History() {
         ))}
       </div>
 
-      {loading && (
+      {loading && !loadedOnce.current && (
         <div className="py-8 text-center text-zinc-500 flex items-center justify-center gap-2">
           <Loader2 className="w-4 h-4 animate-spin" /> Cargando…
         </div>
       )}
-      {!loading && rows.length === 0 && <p className="text-zinc-500 text-center py-10 text-sm">Sin marcaciones en este rango.</p>}
+      {!loading && loadedOnce.current && rows.length === 0 && (
+        <p className="text-zinc-500 text-center py-10 text-sm">Sin marcaciones en este rango.</p>
+      )}
 
       <div className="space-y-2">
         {rows.map((r) => {
@@ -96,14 +108,10 @@ export default function History() {
                 </div>
                 {r.retraso_minutos > 0 && <span className="px-2 py-1 rounded-full bg-yellow-500/15 text-yellow-400 text-[10px] font-bold uppercase">+{r.retraso_minutos}m</span>}
                 {r.latitud != null && (
-                  <a
-                    href={mapsUrl(r.latitud, r.longitud)}
-                    target="_blank"
-                    rel="noreferrer"
+                  <a href={mapsUrl(r.latitud, r.longitud)} target="_blank" rel="noreferrer"
                     className="shrink-0 w-9 h-9 rounded-xl grid place-items-center bg-gold/10 text-gold hover:bg-gold/20 border border-gold/30 transition-colors"
                     title="Ver ubicación"
-                    data-testid={`history-view-location-${r.id}`}
-                  >
+                    data-testid={`history-view-location-${r.id}`}>
                     <MapPin className="w-4 h-4" />
                   </a>
                 )}

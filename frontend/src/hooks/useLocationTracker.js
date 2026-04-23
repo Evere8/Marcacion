@@ -3,9 +3,9 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 
 // Continuously track the staff's position while the app is active and
-// upsert the latest coordinates into public.live_positions.
-// Admin dashboards subscribe to that table via realtime to show live markers.
-export function useLocationTracker({ intervalMs = 12000 } = {}) {
+// upsert the latest coordinates into public.live_positions — ONLY if the
+// user has enabled background sharing (stored in localStorage).
+export function useLocationTracker({ intervalMs = 15000 } = {}) {
   const { user, profile } = useAuth();
   const watchRef = useRef(null);
   const lastSentRef = useRef(0);
@@ -13,6 +13,9 @@ export function useLocationTracker({ intervalMs = 12000 } = {}) {
   useEffect(() => {
     if (!user || profile?.rol !== 'personal') return;
     if (!('geolocation' in navigator)) return;
+
+    const enabled = localStorage.getItem('alfatwin_share_location') === 'yes';
+    if (!enabled) return;
 
     async function push(lat, lng, acc, heading, speed) {
       const now = Date.now();
@@ -48,4 +51,15 @@ export function useLocationTracker({ intervalMs = 12000 } = {}) {
       watchRef.current = null;
     };
   }, [user, profile?.rol, intervalMs]);
+}
+
+export function getLocationSharingEnabled() {
+  return localStorage.getItem('alfatwin_share_location') === 'yes';
+}
+export function setLocationSharingEnabled(enabled) {
+  localStorage.setItem('alfatwin_share_location', enabled ? 'yes' : 'no');
+}
+export function hasAnsweredLocationSharing() {
+  const v = localStorage.getItem('alfatwin_share_location');
+  return v === 'yes' || v === 'no';
 }

@@ -53,7 +53,7 @@ export default function AdminLayout() {
       </aside>
 
       {/* MOBILE topbar */}
-      <header className="md:hidden sticky top-0 z-30 glass px-5 py-3 flex items-center justify-between">
+      <header className="md:hidden sticky top-0 z-30 glass px-5 py-3 flex items-center justify-between safe-pt">
         <Logo size={34} withText />
         <NotificationsBell />
       </header>

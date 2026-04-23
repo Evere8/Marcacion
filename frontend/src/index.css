@@ -121,3 +121,4 @@
 
 /* bottom nav safe area */
 .safe-pb { padding-bottom: calc(env(safe-area-inset-bottom, 0) + 0.5rem); }
+.safe-pt { padding-top: calc(env(safe-area-inset-top, 0) + 0.25rem); }
