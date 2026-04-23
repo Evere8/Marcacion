@@ -1,54 +1,76 @@
-import { useEffect } from "react";
-import "@/App.css";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import axios from "axios";
+import { useEffect } from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { SystemConfigProvider } from './contexts/SystemConfigContext';
+import { Toaster } from './components/ui/sonner';
+import Login from './pages/Login';
+import AdminLayout from './components/Layout/AdminLayout';
+import StaffLayout from './components/Layout/StaffLayout';
+import AdminDashboard from './pages/admin/Dashboard';
+import AdminPersonal from './pages/admin/Personal';
+import AdminTasks from './pages/admin/Tasks';
+import AdminTaskDetail from './pages/admin/TaskDetail';
+import AdminConfig from './pages/admin/Config';
+import StaffHome from './pages/staff/Home';
+import StaffClockIn from './pages/staff/ClockIn';
+import StaffHistory from './pages/staff/History';
+import StaffTasks from './pages/staff/Tasks';
+import StaffTaskDetail from './pages/staff/TaskDetail';
+import StaffChecklist from './pages/staff/Checklist';
+import SetupRequired from './components/SetupRequired';
+import './App.css';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
-
-const Home = () => {
-  const helloWorldApi = async () => {
-    try {
-      const response = await axios.get(`${API}/`);
-      console.log(response.data.message);
-    } catch (e) {
-      console.error(e, `errored out requesting / api`);
-    }
-  };
-
-  useEffect(() => {
-    helloWorldApi();
-  }, []);
-
-  return (
-    <div>
-      <header className="App-header">
-        <a
-          className="App-link"
-          href="https://emergent.sh"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <img src="https://avatars.githubusercontent.com/in/1201222?s=120&u=2686cf91179bbafbc7a71bfbc43004cf9ae1acea&v=4" />
-        </a>
-        <p className="mt-5">Building something incredible ~!</p>
-      </header>
-    </div>
-  );
-};
-
-function App() {
-  return (
-    <div className="App">
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Home />}>
-            <Route index element={<Home />} />
-          </Route>
-        </Routes>
-      </BrowserRouter>
-    </div>
-  );
+function RoleGate({ role, children }) {
+  const { session, profile, loading } = useAuth();
+  if (loading) return <div className="min-h-screen grid place-items-center text-zinc-500">Cargando…</div>;
+  if (!session) return <Navigate to="/login" replace />;
+  if (!profile) return <SetupRequired />;
+  if (!profile.activo) return <div className="min-h-screen grid place-items-center text-zinc-400">Tu cuenta está desactivada.</div>;
+  if (role && profile.rol !== role) return <Navigate to={profile.rol === 'admin' ? '/admin' : '/app'} replace />;
+  return children;
 }
 
-export default App;
+function RootRedirect() {
+  const { session, profile, loading } = useAuth();
+  if (loading) return <div className="min-h-screen grid place-items-center text-zinc-500">Cargando…</div>;
+  if (!session) return <Navigate to="/login" replace />;
+  if (profile?.rol === 'admin') return <Navigate to="/admin" replace />;
+  return <Navigate to="/app" replace />;
+}
+
+export default function App() {
+  useEffect(() => {
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+    }
+  }, []);
+  return (
+    <SystemConfigProvider>
+      <AuthProvider>
+        <BrowserRouter>
+          <Toaster richColors theme="dark" position="top-right" />
+          <Routes>
+            <Route path="/login" element={<Login />} />
+            <Route path="/" element={<RootRedirect />} />
+            <Route path="/admin" element={<RoleGate role="admin"><AdminLayout /></RoleGate>}>
+              <Route index element={<AdminDashboard />} />
+              <Route path="personal" element={<AdminPersonal />} />
+              <Route path="tareas" element={<AdminTasks />} />
+              <Route path="tareas/:id" element={<AdminTaskDetail />} />
+              <Route path="config" element={<AdminConfig />} />
+            </Route>
+            <Route path="/app" element={<RoleGate role="personal"><StaffLayout /></RoleGate>}>
+              <Route index element={<StaffHome />} />
+              <Route path="marcar" element={<StaffClockIn />} />
+              <Route path="historial" element={<StaffHistory />} />
+              <Route path="tareas" element={<StaffTasks />} />
+              <Route path="tareas/:id" element={<StaffTaskDetail />} />
+              <Route path="pendientes" element={<StaffChecklist />} />
+            </Route>
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </BrowserRouter>
+      </AuthProvider>
+    </SystemConfigProvider>
+  );
+}
