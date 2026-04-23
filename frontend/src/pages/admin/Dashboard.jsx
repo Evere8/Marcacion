@@ -3,10 +3,11 @@ import { supabase } from '../../lib/supabase';
 import { useRealtime } from '../../hooks/useRealtime';
 import { MapContainer, TileLayer, Marker, Popup, CircleMarker } from 'react-leaflet';
 import L from 'leaflet';
-import { Clock, AlertTriangle, MapPin, UserX, ClipboardList, BellRing, LogIn as InIcon, LogOut as OutIcon, Activity } from 'lucide-react';
+import { Clock, AlertTriangle, MapPin, UserX, ClipboardList, BellRing, LogIn as InIcon, LogOut as OutIcon, Activity, ExternalLink } from 'lucide-react';
 import { Badge } from '../../components/ui/badge';
 import { formatTime, minutesToText, todayISO } from '../../lib/format';
 import { sendNotification, sendNotificationBulk } from '../../hooks/useNotifications';
+import { mapsUrl } from '../../lib/gps';
 import { toast } from 'sonner';
 
 const goldIcon = L.divIcon({
@@ -15,29 +16,52 @@ const goldIcon = L.divIcon({
   iconSize: [22, 22], iconAnchor: [11, 11],
 });
 
+function avatarIcon(name, photo) {
+  const initials = (name || '?').split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase();
+  const label = (name || '').split(' ').slice(0, 2).join(' ');
+  const bg = photo ? `background-image:url('${photo}');background-size:cover;background-position:center;` : '';
+  const inner = photo ? '' : `<span style="color:#D4AF37;font-weight:900;font-size:12px;">${initials}</span>`;
+  return L.divIcon({
+    className: '',
+    html: `
+      <div style="display:flex;flex-direction:column;align-items:center;transform:translateY(-18px);">
+        <div style="position:relative;width:42px;height:42px;border-radius:50%;border:2px solid #D4AF37;${bg}background-color:rgba(212,175,55,0.15);display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 4px rgba(212,175,55,0.35),0 0 0 8px rgba(212,175,55,0.15);">
+          ${inner}
+          <span style="position:absolute;bottom:-3px;right:-3px;width:10px;height:10px;border-radius:50%;background:#34C759;border:2px solid #050505;"></span>
+        </div>
+        <div style="margin-top:4px;background:rgba(5,5,5,0.85);border:1px solid rgba(212,175,55,0.3);padding:2px 6px;border-radius:10px;white-space:nowrap;font-size:10px;font-weight:700;color:#fff;max-width:120px;overflow:hidden;text-overflow:ellipsis;">${label}</div>
+      </div>`,
+    iconSize: [42, 60], iconAnchor: [21, 60],
+  });
+}
+
 export default function Dashboard() {
   const [marks, setMarks] = useState([]);
   const [personal, setPersonal] = useState([]);
   const [tasks, setTasks] = useState([]);
+  const [live, setLive] = useState([]); // live_positions
   const [selected, setSelected] = useState(null);
 
   async function loadAll() {
     const today = todayISO();
-    const [m, p, t] = await Promise.all([
+    const [m, p, t, lp] = await Promise.all([
       supabase.from('marks').select('*, profiles:user_id(nombre,foto_perfil,email)').eq('fecha', today).order('created_at', { ascending: false }),
       supabase.from('profiles').select('*').eq('activo', true),
       supabase.from('tasks').select('*, assignee:assignee_id(nombre)').order('created_at', { ascending: false }).limit(30),
+      supabase.from('live_positions').select('*').gte('updated_at', new Date(Date.now() - 15 * 60 * 1000).toISOString()),
     ]);
     setMarks(m.data || []);
     setPersonal(p.data || []);
     setTasks(t.data || []);
+    setLive(lp.data || []);
   }
 
   useEffect(() => { loadAll(); }, []);
   useRealtime('dash_marks', (ch) => {
     ch.on('postgres_changes', { event: '*', schema: 'public', table: 'marks' }, loadAll)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, loadAll)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, loadAll);
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, loadAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'live_positions' }, loadAll);
   }, []);
 
   const sinMarcar = useMemo(() => {
@@ -56,9 +80,18 @@ export default function Dashboard() {
     return Object.entries(agg).map(([id, v]) => ({ id, ...v })).sort((a, b) => b.entrada - a.entrada);
   }, [marks]);
 
-  const mapCenter = marks.find((m) => m.latitud)
+  const mapCenter = live.find((l) => l.latitud)
+    ? [live[0].latitud, live[0].longitud]
+    : marks.find((m) => m.latitud)
     ? [marks.find((m) => m.latitud).latitud, marks.find((m) => m.latitud).longitud]
     : [-16.5, -68.15];
+
+  // Map of user_id → profile for live markers
+  const profileById = useMemo(() => {
+    const m = {};
+    for (const p of personal) m[p.id] = p;
+    return m;
+  }, [personal]);
 
   async function enviarAvisoIndividual(user_id, nombre) {
     await sendNotification(user_id, {
@@ -93,12 +126,32 @@ export default function Dashboard() {
         {/* LIVE MAP */}
         <div className="card-premium lg:col-span-2 p-0 overflow-hidden fade-up">
           <div className="flex items-center justify-between p-5 border-b border-white/5">
-            <div><p className="label-eyebrow mb-1">Ubicación en vivo</p><h2 className="text-lg font-black">Marcaciones de hoy</h2></div>
-            <Badge className="bg-gold/15 text-gold border border-gold/30 uppercase tracking-wider">Tiempo real</Badge>
+            <div><p className="label-eyebrow mb-1">Ubicación en vivo</p><h2 className="text-lg font-black">Personal en tiempo real</h2></div>
+            <Badge className="bg-gold/15 text-gold border border-gold/30 uppercase tracking-wider">{live.length} en línea</Badge>
           </div>
           <div className="h-[420px]">
-            <MapContainer center={mapCenter} zoom={12} scrollWheelZoom style={{ height: '100%', width: '100%' }}>
+            <MapContainer center={mapCenter} zoom={13} scrollWheelZoom style={{ height: '100%', width: '100%' }}>
               <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" attribution='&copy; CARTO &copy; OpenStreetMap' />
+              {/* Live employee positions */}
+              {live.map((l) => {
+                const p = profileById[l.user_id];
+                if (!p) return null;
+                return (
+                  <Marker key={`live-${l.user_id}`} position={[l.latitud, l.longitud]} icon={avatarIcon(p.nombre, p.foto_perfil)}>
+                    <Popup>
+                      <div className="space-y-1">
+                        <p className="font-bold text-white">{p.nombre}</p>
+                        <p className="text-xs text-green-400">🟢 En línea · precisión {Math.round(l.precision_m || 0)} m</p>
+                        <p className="text-[11px] text-zinc-500">Actualizado: {new Date(l.updated_at).toLocaleTimeString('es-ES')}</p>
+                        <a href={mapsUrl(l.latitud, l.longitud)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 mt-2 text-[11px] text-gold font-bold uppercase tracking-wider">
+                          <ExternalLink className="w-3 h-3" /> Abrir en Maps
+                        </a>
+                      </div>
+                    </Popup>
+                  </Marker>
+                );
+              })}
+              {/* Clock-in / out location pins */}
               {marks.filter((m) => m.latitud).map((m) => (
                 <Marker key={m.id} position={[m.latitud, m.longitud]} icon={goldIcon} eventHandlers={{ click: () => setSelected(m) }}>
                   <Popup>
@@ -106,7 +159,9 @@ export default function Dashboard() {
                       <p className="font-bold text-white">{m.profiles?.nombre}</p>
                       <p className="text-xs text-zinc-400">{m.tipo === 'entrada' ? 'Entrada' : 'Salida'} · {formatTime(m.hora)}</p>
                       <p className="text-[11px] text-zinc-500">{m.direccion_geolocalizada}</p>
-                      {m.fake_gps_detected && <p className="text-red-400 text-xs font-bold">⚠ GPS sospechoso</p>}
+                      <a href={mapsUrl(m.latitud, m.longitud)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 mt-2 text-[11px] text-gold font-bold uppercase tracking-wider">
+                        <ExternalLink className="w-3 h-3" /> Abrir en Maps
+                      </a>
                     </div>
                   </Popup>
                 </Marker>
@@ -125,23 +180,34 @@ export default function Dashboard() {
           <div className="space-y-2 max-h-[420px] overflow-auto pr-1">
             {marks.length === 0 && <p className="text-zinc-500 text-sm py-6 text-center">Aún no hay marcaciones hoy.</p>}
             {marks.map((m) => (
-              <button key={m.id} className="w-full text-left flex items-center gap-3 p-3 rounded-xl hover:bg-white/5 transition-colors"
-                onClick={() => setSelected(m)} data-testid={`mark-item-${m.id}`}>
-                <div className={`w-9 h-9 rounded-xl grid place-items-center ${m.tipo === 'entrada' ? 'bg-green-500/15 text-green-400' : 'bg-blue-500/15 text-blue-400'}`}>
-                  {m.tipo === 'entrada' ? <InIcon className="w-4 h-4" /> : <OutIcon className="w-4 h-4" />}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-bold text-white truncate">{m.profiles?.nombre}</p>
-                  <p className="text-[11px] text-zinc-500 truncate">{formatTime(m.hora)} · {m.direccion_geolocalizada || 'Ubicación'}</p>
-                </div>
-                {m.fake_gps_detected ? (
-                  <Badge className="bg-red-500/15 text-red-400 border border-red-500/30 uppercase text-[10px]">Fake</Badge>
-                ) : m.retraso_minutos > 0 ? (
+              <div key={m.id} className="flex items-center gap-3 p-3 rounded-xl hover:bg-white/5 transition-colors" data-testid={`mark-item-${m.id}`}>
+                <button onClick={() => setSelected(m)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
+                  <div className={`w-9 h-9 rounded-xl grid place-items-center shrink-0 ${m.tipo === 'entrada' ? 'bg-green-500/15 text-green-400' : 'bg-blue-500/15 text-blue-400'}`}>
+                    {m.tipo === 'entrada' ? <InIcon className="w-4 h-4" /> : <OutIcon className="w-4 h-4" />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-white truncate">{m.profiles?.nombre}</p>
+                    <p className="text-[11px] text-zinc-500 truncate">{formatTime(m.hora)} · {m.direccion_geolocalizada || 'Ubicación'}</p>
+                  </div>
+                </button>
+                {m.retraso_minutos > 0 ? (
                   <Badge className="bg-yellow-500/15 text-yellow-400 border border-yellow-500/30 uppercase text-[10px]">+{minutesToText(m.retraso_minutos)}</Badge>
                 ) : (
                   <Badge className="bg-green-500/15 text-green-400 border border-green-500/30 uppercase text-[10px]">A tiempo</Badge>
                 )}
-              </button>
+                {m.latitud != null && (
+                  <a
+                    href={mapsUrl(m.latitud, m.longitud)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="shrink-0 w-9 h-9 rounded-xl grid place-items-center bg-gold/10 text-gold hover:bg-gold/20 border border-gold/30 transition-colors"
+                    title="Ver ubicación en Maps"
+                    data-testid={`mark-view-location-${m.id}`}
+                  >
+                    <MapPin className="w-4 h-4" />
+                  </a>
+                )}
+              </div>
             ))}
           </div>
         </div>

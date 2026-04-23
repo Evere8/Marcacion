@@ -1,54 +1,4 @@
-// Anti-fake-GPS detection — conservative heuristics usable from the browser.
-// Returns { fake: boolean, reasons: string[] }.
-
-export async function detectFakeGPS(position) {
-  const reasons = [];
-  if (!position || !position.coords) {
-    reasons.push('Sin datos de posición');
-    return { fake: true, reasons };
-  }
-  const { accuracy, latitude, longitude, altitude, speed } = position.coords;
-
-  // 1. Unrealistically perfect accuracy is suspicious.
-  if (accuracy != null && accuracy < 1) reasons.push('Precisión sospechosamente perfecta');
-
-  // 2. Very poor accuracy → probably IP geolocation, not real GPS.
-  if (accuracy != null && accuracy > 150) reasons.push(`Precisión insuficiente (${Math.round(accuracy)} m)`);
-
-  // 3. Coordinates at (0,0) are the classic emulator default.
-  if (latitude === 0 && longitude === 0) reasons.push('Coordenadas (0,0) típicas de emulador');
-
-  // 4. Exact integer lat/lng is typical of mock providers.
-  if (Number.isInteger(latitude) && Number.isInteger(longitude)) reasons.push('Coordenadas enteras (mock)');
-
-  // 5. altitude/speed are NaN on nearly every mock provider.
-  if (altitude === null && speed === null && accuracy != null && accuracy < 5) {
-    reasons.push('Sin altitud/velocidad pero precisión extrema');
-  }
-
-  // 6. Sample 2 reads — if the chip keeps returning the exact same lat/lng/accuracy,
-  //    that's a strong mock-location signal on a moving device.
-  try {
-    const second = await new Promise((res, rej) =>
-      navigator.geolocation.getCurrentPosition(res, rej, { enableHighAccuracy: true, timeout: 6000, maximumAge: 0 })
-    );
-    if (
-      second.coords.latitude === latitude &&
-      second.coords.longitude === longitude &&
-      second.coords.accuracy === accuracy
-    ) {
-      reasons.push('Lecturas GPS idénticas (mock)');
-    }
-  } catch (_) { /* ignore */ }
-
-  // 7. Detect common user-agent signals of dev tooling.
-  const ua = (navigator.userAgent || '').toLowerCase();
-  if (ua.includes('headlesschrome') || ua.includes('phantomjs')) {
-    reasons.push('User agent sospechoso (headless)');
-  }
-
-  return { fake: reasons.length > 0 && reasons.some(r => !r.startsWith('Precisión insuficiente')), reasons };
-}
+// Simple, reliable geolocation helpers (fake-GPS detection removed).
 
 export function getDeviceInfo() {
   const n = navigator;
@@ -76,5 +26,31 @@ export function getHighAccuracyPosition(opts = {}) {
       timeout: opts.timeout ?? 15000,
       maximumAge: 0,
     });
+  });
+}
+
+// Returns an object URL you can use to open native maps on mobile or Google Maps on desktop.
+export function mapsUrl(lat, lng) {
+  if (lat == null || lng == null) return null;
+  // Universal URL: native apps on iOS/Android will catch it, desktop opens Google Maps.
+  return `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+}
+
+// Request persistent location permission (best-effort; browsers handle UI).
+export async function ensureLocationPermission() {
+  if (!('geolocation' in navigator)) return 'unsupported';
+  try {
+    if (navigator.permissions?.query) {
+      const p = await navigator.permissions.query({ name: 'geolocation' });
+      if (p.state === 'granted') return 'granted';
+    }
+  } catch {}
+  // Trigger a one-off high-accuracy request so the browser shows the prompt.
+  return new Promise((resolve) => {
+    navigator.geolocation.getCurrentPosition(
+      () => resolve('granted'),
+      (err) => resolve(err.code === 1 ? 'denied' : 'prompt'),
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
+    );
   });
 }

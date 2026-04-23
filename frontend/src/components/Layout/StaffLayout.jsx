@@ -1,8 +1,11 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { Home, ClipboardList, History, CheckSquare, LogOut } from 'lucide-react';
+import { useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import Logo from '../Logo';
 import NotificationsBell from '../NotificationsBell';
+import { useLocationTracker } from '../../hooks/useLocationTracker';
+import { ensureLocationPermission } from '../../lib/gps';
 
 const nav = [
   { to: '/app', icon: Home, label: 'Inicio', end: true },
@@ -14,6 +17,10 @@ const nav = [
 export default function StaffLayout() {
   const { profile, signOut } = useAuth();
   const navigate = useNavigate();
+
+  useEffect(() => { ensureLocationPermission(); }, []);
+  useLocationTracker({ intervalMs: 15000 });
+
   return (
     <div className="min-h-screen flex flex-col bg-obsidian">
       <header className="sticky top-0 z-30 glass px-5 py-3 flex items-center justify-between">

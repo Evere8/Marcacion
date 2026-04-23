@@ -3,8 +3,10 @@
   "name": "ALFATWIN - Control de Personal",
   "description": "Sistema premium de marcación y gestión de personal en tiempo real.",
   "icons": [
-    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
-    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ],
   "start_url": "/",
   "scope": "/",
@@ -12,5 +14,7 @@
   "orientation": "portrait",
   "theme_color": "#050505",
   "background_color": "#050505",
-  "lang": "es"
+  "lang": "es",
+  "permissions": ["geolocation", "notifications"],
+  "categories": ["business", "productivity"]
 }

@@ -3,7 +3,8 @@ import { supabase } from '../../lib/supabase';
 import { useRealtime } from '../../hooks/useRealtime';
 import { useAuth } from '../../contexts/AuthContext';
 import { formatTime, formatDateEs, todayISO } from '../../lib/format';
-import { Trash2, Edit2, Loader2 } from 'lucide-react';
+import { mapsUrl } from '../../lib/gps';
+import { Trash2, Edit2, Loader2, MapPin } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function History() {
@@ -72,6 +73,18 @@ export default function History() {
                 </div>
                 {r.fake_gps_detected && <span className="px-2 py-1 rounded-full bg-red-500/15 text-red-400 text-[10px] font-bold uppercase">Fake</span>}
                 {r.retraso_minutos > 0 && !r.fake_gps_detected && <span className="px-2 py-1 rounded-full bg-yellow-500/15 text-yellow-400 text-[10px] font-bold uppercase">+{r.retraso_minutos}m</span>}
+                {r.latitud != null && (
+                  <a
+                    href={mapsUrl(r.latitud, r.longitud)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="shrink-0 w-9 h-9 rounded-xl grid place-items-center bg-gold/10 text-gold hover:bg-gold/20 border border-gold/30 transition-colors"
+                    title="Ver ubicación en Maps"
+                    data-testid={`history-view-location-${r.id}`}
+                  >
+                    <MapPin className="w-4 h-4" />
+                  </a>
+                )}
                 {today && (
                   <div className="flex gap-1">
                     <button onClick={() => editHora(r)} className="p-2 rounded-lg hover:bg-white/5" data-testid={`history-edit-${r.id}`}><Edit2 className="w-3.5 h-3.5 text-zinc-400" /></button>
