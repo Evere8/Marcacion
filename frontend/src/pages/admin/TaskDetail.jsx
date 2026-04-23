@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
+import { useRealtime } from '../../hooks/useRealtime';
 import { useAuth } from '../../contexts/AuthContext';
 import { ArrowLeft, Send, Trash2, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -28,13 +29,10 @@ export function TaskChatView({ basePath, isAdmin }) {
     await supabase.from('task_chat').update({ visto: true }).eq('task_id', id).neq('sender_id', user.id).eq('visto', false);
   }
 
-  useEffect(() => {
-    load();
-    const ch = supabase.channel(`task_${id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'task_chat', filter: `task_id=eq.${id}` }, load)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: `id=eq.${id}` }, load)
-      .subscribe();
-    return () => supabase.removeChannel(ch);
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [id]);
+  useRealtime(`task_${id}`, (ch) => {
+    ch.on('postgres_changes', { event: '*', schema: 'public', table: 'task_chat', filter: `task_id=eq.${id}` }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: `id=eq.${id}` }, load);
   }, [id]);
 
   useEffect(() => { listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' }); }, [messages.length]);

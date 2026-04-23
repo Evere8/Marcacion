@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
+import { useRealtime } from '../../hooks/useRealtime';
 import { useAuth } from '../../contexts/AuthContext';
 import { MapPin, ClipboardList, LogIn as InIcon, LogOut as OutIcon, AlertTriangle, ChevronRight } from 'lucide-react';
 import { formatTime, todayISO } from '../../lib/format';
@@ -30,12 +31,15 @@ export default function StaffHome() {
     load();
     requestNotificationPermission();
     const i = setInterval(() => setNow(new Date()), 30000);
-    const ch = supabase.channel('staff_home')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'marks', filter: `user_id=eq.${user.id}` }, load)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: `assignee_id=eq.${user.id}` }, load)
-      .subscribe();
-    return () => { clearInterval(i); supabase.removeChannel(ch); };
+    return () => clearInterval(i);
+    // eslint-disable-next-line
   }, [user]);
+
+  useRealtime(user ? `staff_home_${user.id}` : 'staff_home', (ch) => {
+    if (!user) return;
+    ch.on('postgres_changes', { event: '*', schema: 'public', table: 'marks', filter: `user_id=eq.${user.id}` }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: `assignee_id=eq.${user.id}` }, load);
+  }, [user?.id]);
 
   const hasEntrada = todayMarks.some((m) => m.tipo === 'entrada');
   const hasSalida = todayMarks.some((m) => m.tipo === 'salida');

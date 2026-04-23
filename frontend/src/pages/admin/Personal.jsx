@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
+import { useRealtime } from '../../hooks/useRealtime';
 import { uploadAvatar } from '../../lib/upload';
 import { Plus, Edit2, Trash2, Power, PowerOff, User as UserIcon, Loader2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../../components/ui/dialog';
@@ -23,10 +24,9 @@ export default function Personal() {
     const { data } = await supabase.from('profiles').select('*').eq('rol', 'personal').order('created_at', { ascending: false });
     setList(data || []);
   }
-  useEffect(() => { load();
-    const ch = supabase.channel('admin_personal')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, load).subscribe();
-    return () => supabase.removeChannel(ch);
+  useEffect(() => { load(); }, []);
+  useRealtime('admin_personal', (ch) => {
+    ch.on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, load);
   }, []);
 
   function openNew() { setForm(empty); setFile(null); setOpen(true); }

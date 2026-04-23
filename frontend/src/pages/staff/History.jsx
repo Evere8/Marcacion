@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
+import { useRealtime } from '../../hooks/useRealtime';
 import { useAuth } from '../../contexts/AuthContext';
 import { formatTime, formatDateEs, todayISO } from '../../lib/format';
 import { Trash2, Edit2, Loader2 } from 'lucide-react';
@@ -23,11 +24,11 @@ export default function History() {
     setRows(data || []);
     setLoading(false);
   }
-  useEffect(() => { load();
-    const ch = supabase.channel('staff_history')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'marks', filter: `user_id=eq.${user.id}` }, load).subscribe();
-    return () => supabase.removeChannel(ch);
-  }, [range]);
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [range]);
+  useRealtime(user ? `staff_history_${user.id}` : 'staff_history', (ch) => {
+    if (!user) return;
+    ch.on('postgres_changes', { event: '*', schema: 'public', table: 'marks', filter: `user_id=eq.${user.id}` }, load);
+  }, [user?.id]);
 
   async function del(r) {
     if (r.fecha !== todayISO()) { toast.error('Solo puedes borrar marcaciones del día.'); return; }

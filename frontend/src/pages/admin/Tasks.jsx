@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
+import { useRealtime } from '../../hooks/useRealtime';
 import { useAuth } from '../../contexts/AuthContext';
 import { Link } from 'react-router-dom';
 import { Plus, Loader2, ChevronRight, ClipboardList } from 'lucide-react';
@@ -28,10 +29,9 @@ export default function Tasks() {
     const { data: p } = await supabase.from('profiles').select('id,nombre,foto_perfil').eq('rol', 'personal').eq('activo', true);
     setPersonal(p || []);
   }
-  useEffect(() => {
-    load();
-    const ch = supabase.channel('admin_tasks').on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, load).subscribe();
-    return () => supabase.removeChannel(ch);
+  useEffect(() => { load(); }, []);
+  useRealtime('admin_tasks', (ch) => {
+    ch.on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, load);
   }, []);
 
   async function save() {

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
+import { useRealtime } from '../../hooks/useRealtime';
 import { useAuth } from '../../contexts/AuthContext';
 import { Input } from '../../components/ui/input';
 import { Checkbox } from '../../components/ui/checkbox';
@@ -27,11 +28,11 @@ export default function Checklist() {
     const { data } = await supabase.from('checklists').select('*').eq('user_id', user.id).order('fecha', { ascending: false }).order('created_at');
     setItems(data || []);
   }
-  useEffect(() => { load();
-    const ch = supabase.channel('staff_checklist')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'checklists', filter: `user_id=eq.${user.id}` }, load).subscribe();
-    return () => supabase.removeChannel(ch);
-  }, []);
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
+  useRealtime(user ? `staff_checklist_${user.id}` : 'staff_checklist', (ch) => {
+    if (!user) return;
+    ch.on('postgres_changes', { event: '*', schema: 'public', table: 'checklists', filter: `user_id=eq.${user.id}` }, load);
+  }, [user?.id]);
 
   async function add() {
     if (!text.trim()) return;

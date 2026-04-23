@@ -1,41 +1,42 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import { useRealtime } from './useRealtime';
 
 export function useNotifications() {
   const { user } = useAuth();
   const [items, setItems] = useState([]);
+  const mountedRef = useRef(true);
   const unread = items.filter(i => !i.leido).length;
 
   useEffect(() => {
+    mountedRef.current = true;
     if (!user) return;
-    let mounted = true;
+    supabase
+      .from('notifications')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(40)
+      .then(({ data }) => { if (mountedRef.current) setItems(data || []); });
+    return () => { mountedRef.current = false; };
+  }, [user]);
 
-    async function load() {
-      const { data } = await supabase
-        .from('notifications')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(40);
-      if (mounted) setItems(data || []);
-    }
-    load();
-
-    const ch = supabase
-      .channel(`notifs_${user.id}`)
-      .on(
+  useRealtime(
+    user ? `notifs_${user.id}` : 'notifs_none',
+    (ch) => {
+      if (!user) return;
+      ch.on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` },
         (payload) => {
           setItems((prev) => [payload.new, ...prev]);
           showBrowserNotification(payload.new);
         }
-      )
-      .subscribe();
-
-    return () => { mounted = false; supabase.removeChannel(ch); };
-  }, [user]);
+      );
+    },
+    [user?.id]
+  );
 
   async function markRead(id) {
     await supabase.from('notifications').update({ leido: true }).eq('id', id);

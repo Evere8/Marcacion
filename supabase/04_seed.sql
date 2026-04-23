@@ -20,7 +20,7 @@ where not exists (select 1 from public.attendance_config);
 -- default system config
 insert into public.system_config (nombre_sistema, color_primary, color_secondary, tagline, logo)
 select 'ALFATWIN','#D4AF37','#E2E8F0','Conectamos Talento · Generamos Soluciones',
-  'https://customer-assets.emergentagent.com/job_890d0b19-1210-4f2a-9296-3f25eb035cc7/artifacts/j6jbc1x8_WhatsApp%20Image%202026-04-19%20at%2018.27.56.jpeg'
+  'https://customer-assets.emergentagent.com/job_marking-system-1/artifacts/5lp911bj_WhatsApp%20Image%202026-04-19%20at%2018.27.56.jpeg'
 where not exists (select 1 from public.system_config);
 
 -- Ensure a profile row exists for richy@gmail.com (even if trigger didn't fire)

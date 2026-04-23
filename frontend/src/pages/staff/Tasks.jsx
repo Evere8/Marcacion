@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
+import { useRealtime } from '../../hooks/useRealtime';
 import { useAuth } from '../../contexts/AuthContext';
 import { ClipboardList, ChevronRight } from 'lucide-react';
 
@@ -12,11 +13,11 @@ export default function StaffTasks() {
     const { data } = await supabase.from('tasks').select('*').eq('assignee_id', user.id).order('created_at', { ascending: false });
     setRows(data || []);
   }
-  useEffect(() => { load();
-    const ch = supabase.channel('staff_tasks_list')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: `assignee_id=eq.${user.id}` }, load).subscribe();
-    return () => supabase.removeChannel(ch);
-  }, []);
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
+  useRealtime(user ? `staff_tasks_${user.id}` : 'staff_tasks', (ch) => {
+    if (!user) return;
+    ch.on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: `assignee_id=eq.${user.id}` }, load);
+  }, [user?.id]);
 
   const rojas = rows.filter((r) => r.urgencia === 'rojo' && r.estado !== 'completada');
   const amarillas = rows.filter((r) => r.urgencia === 'amarillo' && r.estado !== 'completada');

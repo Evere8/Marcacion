@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../lib/supabase';
+import { useRealtime } from '../../hooks/useRealtime';
 import { MapContainer, TileLayer, Marker, Popup, CircleMarker } from 'react-leaflet';
 import L from 'leaflet';
 import { Clock, AlertTriangle, MapPin, UserX, ClipboardList, BellRing, LogIn as InIcon, LogOut as OutIcon, Activity } from 'lucide-react';
@@ -32,14 +33,11 @@ export default function Dashboard() {
     setTasks(t.data || []);
   }
 
-  useEffect(() => {
-    loadAll();
-    const ch = supabase.channel('dash_marks')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'marks' }, loadAll)
+  useEffect(() => { loadAll(); }, []);
+  useRealtime('dash_marks', (ch) => {
+    ch.on('postgres_changes', { event: '*', schema: 'public', table: 'marks' }, loadAll)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, loadAll)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, loadAll)
-      .subscribe();
-    return () => supabase.removeChannel(ch);
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, loadAll);
   }, []);
 
   const sinMarcar = useMemo(() => {

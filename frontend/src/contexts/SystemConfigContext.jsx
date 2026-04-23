@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { useRealtime } from '../hooks/useRealtime';
 
 const SysCtx = createContext(null);
 
@@ -8,7 +9,7 @@ const DEFAULTS = {
   color_primary: '#D4AF37',
   color_secondary: '#E2E8F0',
   tagline: 'Conectamos Talento · Generamos Soluciones',
-  logo: 'https://customer-assets.emergentagent.com/job_890d0b19-1210-4f2a-9296-3f25eb035cc7/artifacts/j6jbc1x8_WhatsApp%20Image%202026-04-19%20at%2018.27.56.jpeg',
+  logo: 'https://customer-assets.emergentagent.com/job_marking-system-1/artifacts/5lp911bj_WhatsApp%20Image%202026-04-19%20at%2018.27.56.jpeg',
 };
 
 export function SystemConfigProvider({ children }) {
@@ -19,13 +20,10 @@ export function SystemConfigProvider({ children }) {
     if (data) setConfig({ ...DEFAULTS, ...data });
   }
 
-  useEffect(() => {
-    load();
-    const ch = supabase
-      .channel('system_config_rt')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'system_config' }, load)
-      .subscribe();
-    return () => supabase.removeChannel(ch);
+  useEffect(() => { load(); }, []);
+
+  useRealtime('system_config_rt', (ch) => {
+    ch.on('postgres_changes', { event: '*', schema: 'public', table: 'system_config' }, load);
   }, []);
 
   useEffect(() => {
