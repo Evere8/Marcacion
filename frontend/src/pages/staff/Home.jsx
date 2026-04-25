@@ -8,6 +8,7 @@ import { formatTime, todayISO } from '../../lib/format';
 import { mapsUrl } from '../../lib/gps';
 import { requestNotificationPermission } from '../../hooks/useNotifications';
 import { useClockInReminder } from '../../hooks/useClockInReminder';
+import { PushToggle } from '../../components/PushPrompt';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
@@ -73,6 +74,9 @@ export default function StaffHome() {
 
   return (
     <div className="space-y-6" data-testid="staff-home">
+      <div className="flex justify-end">
+        <PushToggle />
+      </div>
       {/* CLOCK CARD */}
       <div className="card-premium p-6 text-center fade-up">
         <p className="label-eyebrow">Hora actual · Paraguay</p>

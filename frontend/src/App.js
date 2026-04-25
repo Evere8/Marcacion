@@ -19,6 +19,7 @@ import StaffTasks from './pages/staff/Tasks';
 import StaffTaskDetail from './pages/staff/TaskDetail';
 import StaffChecklist from './pages/staff/Checklist';
 import ProfileRetry from './components/ProfileRetry';
+import PushPrompt from './components/PushPrompt';
 import './App.css';
 
 function RoleGate({ role, children }) {
@@ -74,6 +75,7 @@ export default function App() {
       <AuthProvider>
         <BrowserRouter>
           <Toaster richColors theme="dark" position="top-right" />
+          <PushPrompt />
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/" element={<RootRedirect />} />

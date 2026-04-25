@@ -5,8 +5,9 @@ import { useSystemConfig } from '../../contexts/SystemConfigContext';
 import { uploadSystemAsset } from '../../lib/upload';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
-import { Loader2, Save, Clock, Palette, User as UserIcon, Image as ImgIcon } from 'lucide-react';
+import { Loader2, Save, Clock, Palette, User as UserIcon, Image as ImgIcon, Bell } from 'lucide-react';
 import { toast } from 'sonner';
+import { PushToggle } from '../../components/PushPrompt';
 
 export default function Config() {
   const { user, profile, refreshProfile } = useAuth();
@@ -137,6 +138,18 @@ export default function Config() {
       </section>
 
       {busy && <div className="fixed bottom-6 left-1/2 -translate-x-1/2 glass rounded-full px-4 py-2 text-xs flex items-center gap-2"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Guardando…</div>}
+
+      <section className="card-premium p-6 fade-up">
+        <header className="flex items-center gap-3 mb-5">
+          <div className="w-10 h-10 rounded-xl bg-gold/15 text-gold grid place-items-center"><Bell className="w-4 h-4" /></div>
+          <div>
+            <p className="label-eyebrow">Notificaciones push</p>
+            <h2 className="text-lg font-black">Este dispositivo</h2>
+            <p className="text-xs text-zinc-500 mt-0.5">Recibe alertas aunque tengas la app cerrada. En iPhone debes "Agregar a pantalla de inicio" para que funcione.</p>
+          </div>
+        </header>
+        <PushToggle />
+      </section>
     </div>
   );
 }

@@ -1,5 +1,8 @@
-// ALFATWIN service worker v5 — network-first for JS/HTML/API, cache for static assets only.
-const CACHE = 'alfatwin-v5';
+// ALFATWIN service worker v6 — network-first for JS/HTML/API,
+// cache-first for static assets, and Web Push handler for OS-level pushes
+// (works when the PWA is closed on iOS 16.4+, Android, and desktop browsers).
+
+const CACHE = 'alfatwin-v6';
 const CORE = ['/manifest.json', '/icons/icon-192.png', '/icons/icon-512.png'];
 
 self.addEventListener('install', (e) => {
@@ -27,7 +30,6 @@ self.addEventListener('fetch', (e) => {
                    url.pathname.startsWith('/static/media/');
 
   if (isStatic) {
-    // cache-first for binary/static
     e.respondWith(
       caches.match(req).then((cached) =>
         cached ||
@@ -39,7 +41,6 @@ self.addEventListener('fetch', (e) => {
       )
     );
   } else {
-    // network-first for HTML, JS, CSS, API
     e.respondWith(
       fetch(req).then((res) => {
         const copy = res.clone();
@@ -50,27 +51,58 @@ self.addEventListener('fetch', (e) => {
   }
 });
 
-self.addEventListener('push', (e) => {
-  let data = {};
-  try { data = e.data ? e.data.json() : {}; } catch { data = { title: 'ALFATWIN', body: e.data?.text() || '' }; }
-  const title = data.title || 'ALFATWIN';
-  e.waitUntil(
-    self.registration.showNotification(title, {
+// ============================================================
+// PUSH HANDLER — works when the PWA is closed.
+// CRITICAL on iOS: must use event.waitUntil + self.registration.showNotification.
+// ============================================================
+self.addEventListener('push', (event) => {
+  let data = { title: 'ALFATWIN', body: '', url: '/' };
+  try {
+    if (event.data) {
+      const payload = event.data.json();
+      data = { ...data, ...payload };
+    }
+  } catch (e) {
+    if (event.data) data.body = event.data.text();
+  }
+
+  event.waitUntil(
+    self.registration.showNotification(data.title, {
       body: data.body || '',
       icon: '/icons/icon-192.png',
       badge: '/icons/icon-192.png',
-      data: { link: data.link || '/' },
+      tag: data.tag || 'alfatwin-notification',
+      renotify: true,
+      data: { url: data.url || data.link || '/' },
+      vibrate: [200, 100, 200],
     })
   );
 });
 
-self.addEventListener('notificationclick', (e) => {
-  e.notification.close();
-  const link = e.notification.data?.link || '/';
-  e.waitUntil(clients.matchAll({ type: 'window' }).then((list) => {
-    for (const c of list) { if ('focus' in c) return c.navigate(link).then(() => c.focus()); }
-    if (clients.openWindow) return clients.openWindow(link);
-  }));
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = event.notification.data?.url || '/';
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((wins) => {
+      for (const w of wins) {
+        if (w.url.includes(self.location.origin)) {
+          w.navigate(url);
+          return w.focus();
+        }
+      }
+      return clients.openWindow ? clients.openWindow(url) : null;
+    })
+  );
+});
+
+// Re-subscribe automatically if the browser invalidates the subscription.
+self.addEventListener('pushsubscriptionchange', (event) => {
+  event.waitUntil((async () => {
+    try {
+      const cs = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      cs.forEach((c) => c.postMessage({ type: 'PUSH_RESUBSCRIBE_NEEDED' }));
+    } catch {}
+  })());
 });
 
 self.addEventListener('message', (e) => {

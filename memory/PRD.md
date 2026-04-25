@@ -22,7 +22,18 @@ Sistema profesional de marcación de personal (PWA + Supabase + Vercel) con marc
 - PWA instalable (manifest + SW + icons desde logo).
 - Configuración runtime del sistema (horarios, colores, logo, credenciales admin).
 
-## What's been implemented (2026-04-25 update)
+## What's been implemented (2026-04-25 update v2 — Web Push real)
+- ✅ **VAPID keys generadas** y guardadas (public en `frontend/.env` `REACT_APP_VAPID_PUBLIC_KEY`).
+- ✅ **`supabase/07_push.sql`**: tabla `push_subscriptions` + RLS (cada usuario gestiona sus suscripciones).
+- ✅ **Service Worker `sw.js` v6**: handler `push` rico (icon/badge/tag/vibrate) + `notificationclick` (abre/enfoca la app en el link), + `pushsubscriptionchange` (auto-resuscribe).
+- ✅ **`frontend/src/lib/webpush.js`**: helpers `subscribeToPush`, `unsubscribeFromPush`, `getCurrentPushSubscription`, `attachResubscribeListener`, upsert idempotente por (user_id, endpoint).
+- ✅ **`frontend/src/components/PushPrompt.jsx`**: banner dorado tras 1.5s para activar (con re-prompt cada 7 días si "después"); plus `<PushToggle />` para Config.
+- ✅ Banner global `<PushPrompt />` montado en `App.js`.
+- ✅ `<PushToggle />` añadido a Admin Config (sección "Notificaciones push") y a Staff Home (esquina superior).
+- ✅ **Edge Function `send-push`** (`supabase/functions/send-push/index.ts`): implementación completa de Web Push aes128gcm + VAPID en Deno (sin librerías externas problemáticas), se dispara por Database Webhook al insertar en `notifications`. Auto-borra suscripciones expiradas (404/410).
+- ✅ **Documentación de despliegue paso a paso**: `supabase/PUSH_DEPLOY.md` con instrucciones para Dashboard y CLI, configuración de secrets, webhook, prueba en iPhone/Android.
+
+## What's been implemented (2026-04-25 update v1)
 - ✅ **AuthContext refactor** (fix infinite "Preparando perfil…" hang): clean state-machine, REST profile fetch with hard timeout, single boot watchdog, optimistic signOut, visibility-aware re-fetch only when no profile.
 - ✅ **TaskDetail urgency buttons** (admin): 3 grandes botones 🟢 A tiempo · 🟡 Apurar · 🔴 Urgente con notificación push al staff.
 - ✅ **Optimistic updates everywhere**: Tasks list (urgencia), TaskDetail (urgencia, estado, chat enviado) — UI actualiza al instante sin esperar realtime.
