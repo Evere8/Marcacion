@@ -55,7 +55,14 @@ export default function Tasks() {
   }
 
   async function setUrgencia(id, urgencia, assignee_id, titulo) {
-    await supabase.from('tasks').update({ urgencia }).eq('id', id);
+    // Optimistic update so the bar lights up instantly.
+    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, urgencia } : t)));
+    const { error } = await supabase.from('tasks').update({ urgencia }).eq('id', id);
+    if (error) {
+      toast.error(error.message);
+      load();
+      return;
+    }
     await sendNotification(assignee_id, {
       tipo: 'tarea', titulo: 'Cambio de urgencia',
       mensaje: `${titulo} → ${urgencia}`, link: `/app/tareas/${id}`,

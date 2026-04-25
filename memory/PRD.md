@@ -22,6 +22,19 @@ Sistema profesional de marcación de personal (PWA + Supabase + Vercel) con marc
 - PWA instalable (manifest + SW + icons desde logo).
 - Configuración runtime del sistema (horarios, colores, logo, credenciales admin).
 
+## What's been implemented (2026-04-25 update)
+- ✅ **AuthContext refactor** (fix infinite "Preparando perfil…" hang): clean state-machine, REST profile fetch with hard timeout, single boot watchdog, optimistic signOut, visibility-aware re-fetch only when no profile.
+- ✅ **TaskDetail urgency buttons** (admin): 3 grandes botones 🟢 A tiempo · 🟡 Apurar · 🔴 Urgente con notificación push al staff.
+- ✅ **Optimistic updates everywhere**: Tasks list (urgencia), TaskDetail (urgencia, estado, chat enviado) — UI actualiza al instante sin esperar realtime.
+- ✅ **Realtime granular** en TaskChatView: INSERT/UPDATE/DELETE de chat se aplican directamente al estado en lugar de re-fetch completo.
+- ✅ **Notificación al admin** cuando staff cambia estado de tarea (En progreso / Completada).
+- ✅ **Reporte de horarios** en Admin Dashboard: 4 KPIs (A tiempo, Tarde, Sin marcar, Salieron) + tabla por empleado con badge contra horario configurado y delta de minutos.
+- ✅ **Recordatorio de marcación** (`useClockInReminder.js`): notificación local 10 min antes y 5 min después de la hora de entrada/salida si el staff aún no marcó.
+- ✅ **Admin Pendientes** (`/admin/pendientes`): mismo flujo que staff checklist, accesible desde sidebar/mobile-nav, con sección quick-access en Dashboard.
+- ✅ **Quick access pendientes en Staff Home** con botón "Mañana" para renovar.
+- ✅ **Botón "Mañana"** (renovar al día siguiente) en items de staff Checklist y admin Checklist.
+- ✅ **Editar marcación = actualizar GPS**: el botón editar en History.jsx ahora re-adquiere ubicación con GPS y ajusta la hora al momento del cambio (en lugar de editar la hora manualmente).
+
 ## What's been implemented (2026-04-23)
 - ✅ SQL scripts completos (`/app/supabase/01_schema.sql`, `02_rls.sql`, `03_storage.sql`, `04_seed.sql`) con tablas, RLS, triggers (retrasos, auto-profile), realtime publication, buckets storage.
 - ✅ Cliente Supabase + AuthContext + SystemConfigContext (colores/logo en vivo).
@@ -52,7 +65,8 @@ Sistema profesional de marcación de personal (PWA + Supabase + Vercel) con marc
 - En Supabase → Authentication → URL Configuration: añadir dominio de Vercel.
 
 ## Backlog P1
-- Web Push real con VAPID (requiere proyecto Firebase / self-hosted push server).
+- **Web Push real con VAPID** (requiere VAPID keys + push subscription en backend) — actualmente solo notificaciones locales del Service Worker mientras la pestaña está abierta o la PWA instalada.
 - Exportación CSV de marcaciones (admin).
 - Reportes semanales por empleado (gráficos Recharts).
 - Multi-site (sucursales) con geofencing.
+- Caching offline avanzado (PWA SW para mutaciones offline en marcación).

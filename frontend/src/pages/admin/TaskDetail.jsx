@@ -24,36 +24,91 @@ export function TaskChatView({ basePath, isAdmin }) {
     const { data: t } = await supabase.from('tasks').select('*, assignee:assignee_id(nombre), admin:admin_id(nombre)').eq('id', id).maybeSingle();
     setTask(t || null);
     const { data: m } = await supabase.from('task_chat').select('*, sender:sender_id(nombre,foto_perfil)').eq('task_id', id).order('created_at');
-    setMessages(m || []);
+    // Merge with any optimistic temp messages we may still have in-flight.
+    setMessages((prev) => {
+      const tempOnes = prev.filter((x) => x.__optimistic);
+      const fromDB = m || [];
+      const fromDBIds = new Set(fromDB.map((x) => x.id));
+      const stillPending = tempOnes.filter((x) => !fromDBIds.has(x.__matchId));
+      return [...fromDB, ...stillPending];
+    });
     // mark chat messages as seen
     await supabase.from('task_chat').update({ visto: true }).eq('task_id', id).neq('sender_id', user.id).eq('visto', false);
   }
 
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [id]);
   useRealtime(`task_${id}`, (ch) => {
-    ch.on('postgres_changes', { event: '*', schema: 'public', table: 'task_chat', filter: `task_id=eq.${id}` }, load)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: `id=eq.${id}` }, load);
+    ch.on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'task_chat', filter: `task_id=eq.${id}` }, async (payload) => {
+      const incoming = payload.new;
+      // Skip if we already have this id (optimistic dedupe).
+      if (!incoming?.id) return load();
+      // Fetch sender info for nicer display.
+      const { data: sender } = await supabase.from('profiles').select('nombre,foto_perfil').eq('id', incoming.sender_id).maybeSingle();
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === incoming.id)) return prev;
+        return [...prev, { ...incoming, sender }];
+      });
+      // Mark seen if not from me.
+      if (incoming.sender_id !== user.id) {
+        supabase.from('task_chat').update({ visto: true }).eq('id', incoming.id);
+      }
+    })
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'task_chat', filter: `task_id=eq.${id}` }, (payload) => {
+      setMessages((prev) => prev.map((m) => (m.id === payload.new.id ? { ...m, ...payload.new } : m)));
+    })
+    .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'task_chat', filter: `task_id=eq.${id}` }, (payload) => {
+      setMessages((prev) => prev.filter((m) => m.id !== payload.old.id));
+    })
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'tasks', filter: `id=eq.${id}` }, (payload) => {
+      setTask((prev) => (prev ? { ...prev, ...payload.new } : prev));
+    });
   }, [id]);
 
   useEffect(() => { listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' }); }, [messages.length]);
 
   async function send() {
     if (!text.trim() || !task) return;
+    const body = text.trim();
+    const tempId = `__tmp_${Date.now()}`;
+    // OPTIMISTIC: show message instantly for the sender.
+    const optimistic = {
+      id: tempId,
+      __optimistic: true,
+      __matchId: tempId,
+      task_id: id,
+      sender_id: user.id,
+      message: body,
+      visto: false,
+      created_at: new Date().toISOString(),
+      sender: { nombre: profile?.nombre, foto_perfil: profile?.foto_perfil },
+    };
+    setMessages((prev) => [...prev, optimistic]);
+    setText('');
     setSending(true);
     try {
-      const { error } = await supabase.from('task_chat').insert({ task_id: id, sender_id: user.id, message: text.trim() });
+      const { data, error } = await supabase
+        .from('task_chat')
+        .insert({ task_id: id, sender_id: user.id, message: body })
+        .select('*, sender:sender_id(nombre,foto_perfil)')
+        .single();
       if (error) throw error;
+      // Replace optimistic with real.
+      setMessages((prev) => prev.map((m) => (m.id === tempId ? data : m)));
       const targetId = isAdmin ? task.assignee_id : task.admin_id;
       if (targetId) {
         await sendNotification(targetId, {
           tipo: 'chat',
           titulo: `Mensaje en "${task.titulo}"`,
-          mensaje: `${profile?.nombre}: ${text.slice(0, 80)}`,
+          mensaje: `${profile?.nombre}: ${body.slice(0, 80)}`,
           link: `${basePath}/${id}`,
         });
       }
-      setText('');
-    } catch (e) { toast.error(e.message); } finally { setSending(false); }
+    } catch (e) {
+      // Remove optimistic on failure.
+      setMessages((prev) => prev.filter((m) => m.id !== tempId));
+      setText(body);
+      toast.error(e.message);
+    } finally { setSending(false); }
   }
 
   async function deleteTask() {
@@ -64,7 +119,16 @@ export function TaskChatView({ basePath, isAdmin }) {
   }
 
   async function setEstado(estado) {
-    await supabase.from('tasks').update({ estado }).eq('id', id);
+    if (!task) return;
+    const prev = task.estado;
+    // OPTIMISTIC update so UI flips instantly without waiting for realtime.
+    setTask({ ...task, estado });
+    const { error } = await supabase.from('tasks').update({ estado }).eq('id', id);
+    if (error) {
+      setTask({ ...task, estado: prev });
+      toast.error(error.message);
+      return;
+    }
     if (!isAdmin && task.admin_id) {
       const labels = { pendiente: 'pendiente', en_progreso: 'en progreso', completada: 'completada' };
       await sendNotification(task.admin_id, {

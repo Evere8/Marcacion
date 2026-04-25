@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useRealtime } from '../../hooks/useRealtime';
 import { useAuth } from '../../contexts/AuthContext';
-import { formatTime, formatDateEs, todayISO } from '../../lib/format';
-import { mapsUrl } from '../../lib/gps';
-import { Trash2, Edit2, Loader2, MapPin } from 'lucide-react';
+import { formatTime, formatDateEs, todayISO, paraguayNow } from '../../lib/format';
+import { mapsUrl, getHighAccuracyPosition, reverseGeocode } from '../../lib/gps';
+import { Trash2, MapPin, Loader2, Crosshair } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function History() {
@@ -13,6 +13,8 @@ export default function History() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const loadedOnce = useRef(false);
+
+  const [editingId, setEditingId] = useState(null);
 
   async function refresh(silent = false) {
     if (!user) return;
@@ -64,14 +66,33 @@ export default function History() {
       toast.success('Eliminada');
     } catch (e) { toast.error(e.message); refresh(true); }
   }
-  async function editHora(r) {
+
+  async function editLocation(r) {
     if (r.fecha !== todayISO()) { toast.error('Solo puedes editar marcaciones del día.'); return; }
-    const nueva = window.prompt('Nueva hora (HH:MM)', formatTime(r.hora));
-    if (!nueva || !/^\d{2}:\d{2}$/.test(nueva)) return;
+    if (!window.confirm('Vamos a actualizar tu ubicación con el GPS actual y la hora se ajustará al momento de este cambio. ¿Continuar?')) return;
+    setEditingId(r.id);
     try {
-      await supabase.from('marks').update({ hora: nueva + ':00' }).eq('id', r.id);
-      toast.success('Hora actualizada');
-    } catch (e) { toast.error(e.message); }
+      const pos = await getHighAccuracyPosition({ timeout: 20000 });
+      const address = await reverseGeocode(pos.coords.latitude, pos.coords.longitude).catch(() => '');
+      const { hora } = paraguayNow();
+      const { error } = await supabase
+        .from('marks')
+        .update({
+          latitud: pos.coords.latitude,
+          longitud: pos.coords.longitude,
+          precision_m: pos.coords.accuracy,
+          direccion_geolocalizada: address,
+          hora,
+        })
+        .eq('id', r.id);
+      if (error) throw error;
+      toast.success('Ubicación actualizada con la hora actual');
+      refresh(true);
+    } catch (e) {
+      toast.error(e.message || 'No se pudo obtener la ubicación');
+    } finally {
+      setEditingId(null);
+    }
   }
 
   return (
@@ -117,7 +138,15 @@ export default function History() {
                 )}
                 {today && (
                   <div className="flex gap-1">
-                    <button onClick={() => editHora(r)} className="p-2 rounded-lg hover:bg-white/5" data-testid={`history-edit-${r.id}`}><Edit2 className="w-3.5 h-3.5 text-zinc-400" /></button>
+                    <button
+                      onClick={() => editLocation(r)}
+                      disabled={editingId === r.id}
+                      className="p-2 rounded-lg hover:bg-gold/10 disabled:opacity-50"
+                      data-testid={`history-edit-location-${r.id}`}
+                      title="Actualizar ubicación con GPS (la hora se ajustará al momento del cambio)"
+                    >
+                      {editingId === r.id ? <Loader2 className="w-3.5 h-3.5 animate-spin text-gold" /> : <Crosshair className="w-3.5 h-3.5 text-gold" />}
+                    </button>
                     <button onClick={() => del(r)} className="p-2 rounded-lg hover:bg-red-500/10" data-testid={`history-delete-${r.id}`}><Trash2 className="w-3.5 h-3.5 text-red-400" /></button>
                   </div>
                 )}
