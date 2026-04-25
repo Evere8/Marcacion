@@ -8,7 +8,7 @@ import { Plus, Trash2, Repeat, CheckSquare, Loader2 } from 'lucide-react';
 import { todayISO, formatDateEs } from '../../lib/format';
 import { toast } from 'sonner';
 
-export default function Checklist() {
+export default function AdminChecklist() {
   const { user } = useAuth();
   const [items, setItems] = useState([]);
   const [text, setText] = useState('');
@@ -57,7 +57,7 @@ export default function Checklist() {
     // eslint-disable-next-line
   }, [user?.id]);
 
-  useRealtime(user ? `staff_checklist_${user.id}` : 'staff_checklist', (ch) => {
+  useRealtime(user ? `admin_checklist_${user.id}` : 'admin_checklist', (ch) => {
     if (!user) return;
     ch.on('postgres_changes', { event: '*', schema: 'public', table: 'checklists', filter: `user_id=eq.${user.id}` },
       () => refresh(true));
@@ -85,13 +85,12 @@ export default function Checklist() {
   }
 
   async function toggle(i) {
-    // Optimistic UI
     setItems((prev) => prev.map((x) => (x.id === i.id ? { ...x, completado: !i.completado } : x)));
     try {
       const { error } = await supabase.from('checklists').update({ completado: !i.completado }).eq('id', i.id);
       if (error) throw error;
     } catch (e) {
-      setItems((prev) => prev.map((x) => (x.id === i.id ? i : x))); // revert
+      setItems((prev) => prev.map((x) => (x.id === i.id ? i : x)));
       toast.error(e.message);
     }
   }
@@ -136,15 +135,20 @@ export default function Checklist() {
   const groups = items.reduce((acc, it) => { (acc[it.fecha] ||= []).push(it); return acc; }, {});
 
   return (
-    <div className="space-y-5" data-testid="staff-checklist-page">
+    <div className="space-y-5 max-w-3xl" data-testid="admin-checklist-page">
+      <header>
+        <p className="label-eyebrow">Personal</p>
+        <h1 className="text-3xl font-black tracking-tight">Mis pendientes</h1>
+      </header>
+
       <form onSubmit={(e) => { e.preventDefault(); add(); }} className="card-premium p-4 flex gap-2 flex-wrap">
-        <Input value={text} onChange={(e) => setText(e.target.value)} placeholder="Nuevo pendiente…"
-          className="flex-1 bg-panel border-white/10 rounded-xl h-11" data-testid="checklist-input" />
+        <Input value={text} onChange={(e) => setText(e.target.value)} placeholder="Nuevo pendiente del admin…"
+          className="flex-1 bg-panel border-white/10 rounded-xl h-11" data-testid="admin-checklist-input" />
         <label className="flex items-center gap-2 text-xs text-zinc-400">
-          <Checkbox checked={repetible} onCheckedChange={(v) => setRepetible(!!v)} data-testid="checklist-repetible" />
+          <Checkbox checked={repetible} onCheckedChange={(v) => setRepetible(!!v)} data-testid="admin-checklist-repetible" />
           <Repeat className="w-3.5 h-3.5" /> Diario
         </label>
-        <button type="submit" disabled={saving || !text.trim()} className="btn-gold flex items-center gap-2" data-testid="checklist-add-button">
+        <button type="submit" disabled={saving || !text.trim()} className="btn-gold flex items-center gap-2" data-testid="admin-checklist-add">
           {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Añadir
         </button>
       </form>
@@ -168,7 +172,7 @@ export default function Checklist() {
             {list.map((i) => (
               <div key={i.id}
                 className={`card-premium p-3 flex items-center gap-3 ${i.completado ? 'opacity-60' : ''}`}
-                data-testid={`checklist-item-${i.id}`}>
+                data-testid={`admin-checklist-item-${i.id}`}>
                 <button
                   type="button"
                   onClick={() => toggle(i)}
@@ -176,7 +180,7 @@ export default function Checklist() {
                   className={`shrink-0 w-7 h-7 rounded-md border flex items-center justify-center transition-all ${
                     i.completado ? 'bg-gold border-gold text-obsidian' : 'bg-transparent border-white/30 hover:border-gold'
                   }`}
-                  data-testid={`checklist-toggle-${i.id}`}
+                  data-testid={`admin-checklist-toggle-${i.id}`}
                 >
                   {i.completado && <CheckSquare className="w-4 h-4" />}
                 </button>
@@ -184,7 +188,7 @@ export default function Checklist() {
                   type="button"
                   onClick={() => editTitulo(i)}
                   className={`flex-1 text-sm text-left ${i.completado ? 'line-through text-zinc-500' : 'text-white'}`}
-                  data-testid={`checklist-edit-${i.id}`}
+                  data-testid={`admin-checklist-edit-${i.id}`}
                 >
                   {i.titulo}
                 </button>
@@ -193,7 +197,7 @@ export default function Checklist() {
                   type="button"
                   onClick={() => renewForTomorrow(i)}
                   className="shrink-0 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-gold/15 text-gold hover:bg-gold/25 border border-gold/30"
-                  data-testid={`checklist-renew-${i.id}`}
+                  data-testid={`admin-checklist-renew-${i.id}`}
                   title="Renovar para mañana"
                 >
                   Mañana
@@ -202,7 +206,7 @@ export default function Checklist() {
                   type="button"
                   onClick={() => del(i)}
                   className="shrink-0 w-8 h-8 grid place-items-center hover:bg-red-500/10 rounded-lg"
-                  data-testid={`checklist-delete-${i.id}`}
+                  data-testid={`admin-checklist-delete-${i.id}`}
                   aria-label="Eliminar"
                 >
                   <Trash2 className="w-3.5 h-3.5 text-red-400" />

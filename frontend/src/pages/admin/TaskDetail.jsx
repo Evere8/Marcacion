@@ -65,6 +65,37 @@ export function TaskChatView({ basePath, isAdmin }) {
 
   async function setEstado(estado) {
     await supabase.from('tasks').update({ estado }).eq('id', id);
+    if (!isAdmin && task.admin_id) {
+      const labels = { pendiente: 'pendiente', en_progreso: 'en progreso', completada: 'completada' };
+      await sendNotification(task.admin_id, {
+        tipo: 'tarea',
+        titulo: `Tarea ${labels[estado] || estado}`,
+        mensaje: `${profile?.nombre} marcó "${task.titulo}" como ${labels[estado] || estado}`,
+        link: `/admin/tareas/${id}`,
+      });
+    }
+  }
+
+  async function setUrgencia(urgencia) {
+    if (!task) return;
+    const prev = task.urgencia;
+    setTask({ ...task, urgencia });
+    const { error } = await supabase.from('tasks').update({ urgencia }).eq('id', id);
+    if (error) {
+      setTask({ ...task, urgencia: prev });
+      toast.error(error.message);
+      return;
+    }
+    if (isAdmin && task.assignee_id) {
+      const labels = { rojo: '🔴 URGENTE', amarillo: '🟡 Apurar', verde: '🟢 A tiempo' };
+      await sendNotification(task.assignee_id, {
+        tipo: 'tarea',
+        titulo: `Cambio de prioridad: ${labels[urgencia]}`,
+        mensaje: `"${task.titulo}" ahora es ${labels[urgencia]}`,
+        link: `/app/tareas/${id}`,
+      });
+      toast.success('Prioridad actualizada y notificada');
+    }
   }
 
   if (!task) return <p className="text-zinc-500">Cargando tarea…</p>;
@@ -89,6 +120,31 @@ export function TaskChatView({ basePath, isAdmin }) {
             </div>
           )}
         </div>
+        {isAdmin && (
+          <div className="mt-4 flex gap-2 flex-wrap" data-testid="task-urgency-controls">
+            <button
+              onClick={() => setUrgencia('verde')}
+              className={`flex-1 min-w-[110px] py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider border transition-all ${task.urgencia === 'verde' ? 'bg-green-500/20 text-green-300 border-green-500/40' : 'bg-white/5 text-zinc-400 border-white/10 hover:border-green-500/40 hover:text-green-300'}`}
+              data-testid="task-urgency-verde"
+            >
+              🟢 A tiempo
+            </button>
+            <button
+              onClick={() => setUrgencia('amarillo')}
+              className={`flex-1 min-w-[110px] py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider border transition-all ${task.urgencia === 'amarillo' ? 'bg-yellow-500/25 text-yellow-300 border-yellow-500/40' : 'bg-white/5 text-zinc-400 border-white/10 hover:border-yellow-500/40 hover:text-yellow-300'}`}
+              data-testid="task-urgency-amarillo"
+            >
+              🟡 Apurar
+            </button>
+            <button
+              onClick={() => setUrgencia('rojo')}
+              className={`flex-1 min-w-[110px] py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider border transition-all ${task.urgencia === 'rojo' ? 'bg-red-500/25 text-red-300 border-red-500/40 pulse-gold' : 'bg-white/5 text-zinc-400 border-white/10 hover:border-red-500/40 hover:text-red-300'}`}
+              data-testid="task-urgency-rojo"
+            >
+              🔴 Urgente
+            </button>
+          </div>
+        )}
         {!isAdmin && (
           <div className="mt-4 flex gap-2">
             <button onClick={() => setEstado('en_progreso')} className={`btn-ghost flex-1 !py-2 ${task.estado === 'en_progreso' ? '!bg-yellow-500/20 !text-yellow-400' : ''}`} data-testid="estado-en_progreso">En progreso</button>

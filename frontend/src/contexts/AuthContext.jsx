@@ -8,22 +8,32 @@ const SUPABASE_ANON = process.env.REACT_APP_SUPABASE_ANON_KEY;
 
 // Hard timeout for any single REST query (ms).
 const QUERY_TIMEOUT_MS = 6000;
+// Boot watchdog — if onAuthStateChange never fires, force loading=false.
+const BOOT_TIMEOUT_MS = 3000;
 
-// Direct REST fetch (bypasses supabase-js so we can hard-timeout the network call).
-async function fetchProfile(userId, accessToken, signal) {
-  const url = `${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}&select=*`;
-  const r = await fetch(url, {
-    method: 'GET',
-    headers: {
-      apikey: SUPABASE_ANON,
-      Authorization: `Bearer ${accessToken || SUPABASE_ANON}`,
-      Accept: 'application/json',
-    },
-    signal,
-  });
-  if (!r.ok) throw new Error(`profiles ${r.status}`);
-  const arr = await r.json();
-  return Array.isArray(arr) && arr.length ? arr[0] : null;
+// Direct REST fetch with abortable timeout. We bypass supabase-js for the
+// profile read because supabase-js's PostgREST client has been observed to
+// hang indefinitely after tab visibility changes / token refreshes.
+async function fetchProfileDirect(userId, accessToken) {
+  const ctrl = new AbortController();
+  const killer = setTimeout(() => ctrl.abort(), QUERY_TIMEOUT_MS);
+  try {
+    const url = `${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}&select=*&limit=1`;
+    const r = await fetch(url, {
+      method: 'GET',
+      headers: {
+        apikey: SUPABASE_ANON,
+        Authorization: `Bearer ${accessToken || SUPABASE_ANON}`,
+        Accept: 'application/json',
+      },
+      signal: ctrl.signal,
+    });
+    if (!r.ok) throw new Error(`profiles ${r.status}`);
+    const arr = await r.json();
+    return Array.isArray(arr) && arr.length ? arr[0] : null;
+  } finally {
+    clearTimeout(killer);
+  }
 }
 
 export function AuthProvider({ children }) {
@@ -31,17 +41,19 @@ export function AuthProvider({ children }) {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [profileMissing, setProfileMissing] = useState(false);
+
+  // Track the user we are *currently* fetching a profile for, so async
+  // races (visibility refetch, token refresh) don't overwrite each other.
   const reqIdRef = useRef(0);
   const lastUserIdRef = useRef(null);
+  const mountedRef = useRef(true);
 
   const loadProfile = useCallback(async (userId, accessToken) => {
     if (!userId) return;
     const myId = ++reqIdRef.current;
-    const ctrl = new AbortController();
-    const killer = setTimeout(() => ctrl.abort(), QUERY_TIMEOUT_MS);
     try {
-      const data = await fetchProfile(userId, accessToken, ctrl.signal);
-      if (myId !== reqIdRef.current) return;
+      const data = await fetchProfileDirect(userId, accessToken);
+      if (!mountedRef.current || myId !== reqIdRef.current) return;
       if (data) {
         setProfile(data);
         setProfileMissing(false);
@@ -49,81 +61,95 @@ export function AuthProvider({ children }) {
         setProfileMissing(true);
       }
     } catch (e) {
+      if (!mountedRef.current || myId !== reqIdRef.current) return;
       // eslint-disable-next-line no-console
       console.warn('[auth] loadProfile failed:', e?.message || e);
-      if (myId === reqIdRef.current) setProfileMissing(true);
-    } finally {
-      clearTimeout(killer);
+      setProfileMissing(true);
     }
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
+    mountedRef.current = true;
+    let bootDone = false;
 
-    // Hard fail-safe so the loading splash NEVER lasts forever.
-    const bootFailsafe = setTimeout(() => {
-      if (!cancelled) setLoading(false);
-    }, 2500);
+    const finishBoot = () => {
+      if (bootDone) return;
+      bootDone = true;
+      if (mountedRef.current) setLoading(false);
+    };
+
+    // Watchdog: never let the splash hang forever.
+    const watchdog = setTimeout(finishBoot, BOOT_TIMEOUT_MS);
+
+    // Fire-and-forget initial session read. We don't await because
+    // onAuthStateChange will fire INITIAL_SESSION immediately.
+    supabase.auth
+      .getSession()
+      .then(({ data }) => {
+        if (!mountedRef.current) return;
+        const s = data?.session || null;
+        if (s) {
+          lastUserIdRef.current = s.user.id;
+          setSession(s);
+          loadProfile(s.user.id, s.access_token);
+        }
+        finishBoot();
+      })
+      .catch(() => finishBoot());
 
     const { data: sub } = supabase.auth.onAuthStateChange((event, s) => {
-      if (cancelled) return;
+      if (!mountedRef.current) return;
       const newUserId = s?.user?.id || null;
-      // Only update session state if the user actually changed
-      // (prevents constant re-renders on TOKEN_REFRESHED).
-      if (newUserId !== lastUserIdRef.current) {
-        lastUserIdRef.current = newUserId;
-        setSession(s || null);
+      const userChanged = newUserId !== lastUserIdRef.current;
+
+      lastUserIdRef.current = newUserId;
+      setSession(s || null);
+
+      if (!s?.user) {
+        // Signed out
         setProfile(null);
         setProfileMissing(false);
-      }
-      setLoading(false);
-      if (s?.user) {
-        // Defer to avoid Supabase deadlocks inside auth callback.
+        reqIdRef.current++;
+      } else if (userChanged || event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+        // Reset profile only on real user/session changes (NOT on TOKEN_REFRESHED).
+        setProfile(null);
+        setProfileMissing(false);
+        // Defer to next microtask to avoid Supabase deadlocks inside the callback.
         setTimeout(() => {
-          if (!cancelled) loadProfile(s.user.id, s.access_token);
+          if (mountedRef.current) loadProfile(s.user.id, s.access_token);
         }, 0);
-      } else {
-        setProfile(null);
-        setProfileMissing(false);
       }
+
+      finishBoot();
     });
 
+    // Re-fetch profile when tab returns to foreground (in case fetch got
+    // suspended). Only if we are signed-in and don't have a profile yet.
     const onVisible = () => {
       if (document.visibilityState !== 'visible') return;
-      if (cancelled) return;
-      // Re-fetch profile if we're signed-in but don't have one yet.
+      if (!mountedRef.current) return;
       const uid = lastUserIdRef.current;
-      if (uid && !profile) {
-        Promise.resolve(supabase.auth.getSession())
-          .then(({ data } = {}) => {
-            const tok = data?.session?.access_token;
-            if (!cancelled) loadProfile(uid, tok);
-          })
-          .catch(() => {});
-      }
+      if (!uid) return;
+      // If we already have a profile, do nothing (don't disturb).
+      // If we don't, refresh the session token and retry.
+      if (profile && !profileMissing) return;
+      supabase.auth.getSession().then(({ data }) => {
+        const tok = data?.session?.access_token;
+        if (mountedRef.current) loadProfile(uid, tok);
+      }).catch(() => {});
     };
     document.addEventListener('visibilitychange', onVisible);
     window.addEventListener('focus', onVisible);
 
     return () => {
-      cancelled = true;
-      clearTimeout(bootFailsafe);
+      mountedRef.current = false;
+      clearTimeout(watchdog);
       sub.subscription.unsubscribe();
       document.removeEventListener('visibilitychange', onVisible);
       window.removeEventListener('focus', onVisible);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadProfile]);
-
-  // Watchdog: profile loading > 7s ⇒ surface retry UI. Uses ref-stable user id.
-  const userIdForWatch = session?.user?.id || null;
-  useEffect(() => {
-    if (!userIdForWatch) return;
-    if (profile) return;
-    if (profileMissing) return;
-    const t = setTimeout(() => setProfileMissing(true), 7000);
-    return () => clearTimeout(t);
-  }, [userIdForWatch, profile, profileMissing]);
 
   async function signIn(email, password) {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
@@ -132,16 +158,18 @@ export function AuthProvider({ children }) {
   }
 
   async function signOut() {
+    // Optimistic local clear so UI flips instantly.
+    reqIdRef.current++;
+    lastUserIdRef.current = null;
     setSession(null);
     setProfile(null);
     setProfileMissing(false);
-    lastUserIdRef.current = null;
     try { localStorage.clear(); } catch {}
     try { sessionStorage.clear(); } catch {}
     try {
       await Promise.race([
         supabase.auth.signOut(),
-        new Promise((r) => setTimeout(r, 2000)),
+        new Promise((r) => setTimeout(r, 1500)),
       ]);
     } catch {}
     window.location.replace('/login');
@@ -150,8 +178,16 @@ export function AuthProvider({ children }) {
   async function retryLoadProfile() {
     setProfileMissing(false);
     if (session?.user) {
-      const tok = session.access_token;
-      await loadProfile(session.user.id, tok);
+      await loadProfile(session.user.id, session.access_token);
+    } else {
+      // Try to recover the session.
+      const { data } = await supabase.auth.getSession();
+      const s = data?.session;
+      if (s?.user) {
+        lastUserIdRef.current = s.user.id;
+        setSession(s);
+        await loadProfile(s.user.id, s.access_token);
+      }
     }
   }
 

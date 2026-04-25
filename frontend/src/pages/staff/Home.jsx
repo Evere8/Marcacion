@@ -3,28 +3,34 @@ import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useRealtime } from '../../hooks/useRealtime';
 import { useAuth } from '../../contexts/AuthContext';
-import { MapPin, ClipboardList, LogIn as InIcon, LogOut as OutIcon, AlertTriangle, ChevronRight } from 'lucide-react';
+import { MapPin, ClipboardList, LogIn as InIcon, LogOut as OutIcon, AlertTriangle, ChevronRight, CheckSquare, Plus, Repeat } from 'lucide-react';
 import { formatTime, todayISO } from '../../lib/format';
 import { mapsUrl } from '../../lib/gps';
 import { requestNotificationPermission } from '../../hooks/useNotifications';
+import { useClockInReminder } from '../../hooks/useClockInReminder';
 import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 
 export default function StaffHome() {
   const { user } = useAuth();
   const nav = useNavigate();
   const [todayMarks, setTodayMarks] = useState([]);
   const [tasks, setTasks] = useState([]);
+  const [pendings, setPendings] = useState([]);
   const [cfg, setCfg] = useState({ hora_entrada: '08:00', hora_salida: '17:00' });
   const [now, setNow] = useState(new Date());
 
   async function load() {
-    const [m, t, c] = await Promise.all([
-      supabase.from('marks').select('*').eq('user_id', user.id).eq('fecha', todayISO()).order('created_at'),
+    const today = todayISO();
+    const [m, t, c, ch] = await Promise.all([
+      supabase.from('marks').select('*').eq('user_id', user.id).eq('fecha', today).order('created_at'),
       supabase.from('tasks').select('*').eq('assignee_id', user.id).neq('estado', 'completada').order('urgencia', { ascending: false }),
       supabase.from('attendance_config').select('*').limit(1).maybeSingle(),
+      supabase.from('checklists').select('*').eq('user_id', user.id).eq('fecha', today).eq('completado', false).order('created_at'),
     ]);
     setTodayMarks(m.data || []);
     setTasks(t.data || []);
+    setPendings(ch.data || []);
     if (c.data) setCfg({ hora_entrada: c.data.hora_entrada?.slice(0, 5), hora_salida: c.data.hora_salida?.slice(0, 5) });
   }
 
@@ -39,12 +45,31 @@ export default function StaffHome() {
   useRealtime(user ? `staff_home_${user.id}` : 'staff_home', (ch) => {
     if (!user) return;
     ch.on('postgres_changes', { event: '*', schema: 'public', table: 'marks', filter: `user_id=eq.${user.id}` }, load)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: `assignee_id=eq.${user.id}` }, load);
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: `assignee_id=eq.${user.id}` }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'checklists', filter: `user_id=eq.${user.id}` }, load);
   }, [user?.id]);
 
   const hasEntrada = todayMarks.some((m) => m.tipo === 'entrada');
   const hasSalida = todayMarks.some((m) => m.tipo === 'salida');
   const nextAction = !hasEntrada ? 'entrada' : !hasSalida ? 'salida' : null;
+
+  useClockInReminder({ userId: user?.id, hasEntrada, hasSalida });
+
+  async function togglePending(it) {
+    setPendings((prev) => prev.filter((x) => x.id !== it.id));
+    await supabase.from('checklists').update({ completado: true }).eq('id', it.id);
+  }
+
+  async function renewForTomorrow(it) {
+    const t = new Date();
+    t.setDate(t.getDate() + 1);
+    const tomorrow = t.toLocaleDateString('en-CA');
+    const { error } = await supabase.from('checklists').insert({
+      user_id: user.id, titulo: it.titulo, repetible: it.repetible, fecha: tomorrow,
+    });
+    if (error) toast.error(error.message);
+    else toast.success(`Renovado para mañana: ${it.titulo}`);
+  }
 
   return (
     <div className="space-y-6" data-testid="staff-home">
@@ -77,6 +102,44 @@ export default function StaffHome() {
           <StatusChip tipo="salida" mark={todayMarks.find((m) => m.tipo === 'salida')} />
         </div>
       </div>
+
+      {/* PENDIENTES rápidos */}
+      <section data-testid="staff-home-pendings">
+        <div className="flex items-center justify-between mb-3">
+          <div><p className="label-eyebrow">Acceso rápido</p><h2 className="text-xl font-black">Pendientes de hoy</h2></div>
+          <Link to="/app/pendientes" className="text-xs text-gold font-bold uppercase tracking-wider flex items-center gap-1">
+            <Plus className="w-3.5 h-3.5" /> Gestionar
+          </Link>
+        </div>
+        <div className="space-y-2">
+          {pendings.slice(0, 5).map((it) => (
+            <div key={it.id} className="card-premium p-3 flex items-center gap-3 fade-up" data-testid={`home-pending-${it.id}`}>
+              <button
+                onClick={() => togglePending(it)}
+                aria-label="Completar"
+                className="shrink-0 w-7 h-7 rounded-md border border-white/30 hover:border-gold transition-all"
+                data-testid={`home-pending-toggle-${it.id}`}
+              />
+              <p className="flex-1 text-sm text-white truncate">{it.titulo}</p>
+              {it.repetible && <Repeat className="w-3.5 h-3.5 text-gold shrink-0" title="Diario" />}
+              <button
+                onClick={() => renewForTomorrow(it)}
+                className="shrink-0 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-gold/15 text-gold hover:bg-gold/25 border border-gold/30"
+                data-testid={`home-pending-renew-${it.id}`}
+                title="Renovar para mañana"
+              >
+                Mañana
+              </button>
+            </div>
+          ))}
+          {pendings.length === 0 && (
+            <Link to="/app/pendientes" className="card-premium p-6 text-center text-zinc-500 block hover:bg-white/5">
+              <CheckSquare className="w-8 h-8 mx-auto mb-2 opacity-50" />
+              <p className="text-sm">Sin pendientes hoy. Toca para crear uno.</p>
+            </Link>
+          )}
+        </div>
+      </section>
 
       {/* TASKS */}
       <section>

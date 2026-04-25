@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { SystemConfigProvider } from './contexts/SystemConfigContext';
@@ -10,6 +10,7 @@ import AdminDashboard from './pages/admin/Dashboard';
 import AdminPersonal from './pages/admin/Personal';
 import AdminTasks from './pages/admin/Tasks';
 import AdminTaskDetail from './pages/admin/TaskDetail';
+import AdminChecklist from './pages/admin/Checklist';
 import AdminConfig from './pages/admin/Config';
 import StaffHome from './pages/staff/Home';
 import StaffClockIn from './pages/staff/ClockIn';
@@ -21,12 +22,33 @@ import ProfileRetry from './components/ProfileRetry';
 import './App.css';
 
 function RoleGate({ role, children }) {
-  const { session, profile, profileMissing, loading } = useAuth();
+  const { session, profile, profileMissing, loading, retryLoadProfile } = useAuth();
+  const [stuck, setStuck] = useState(false);
+
+  useEffect(() => {
+    if (session && !profile && !profileMissing) {
+      const t = setTimeout(() => setStuck(true), 6000);
+      return () => clearTimeout(t);
+    }
+    setStuck(false);
+  }, [session, profile, profileMissing]);
+
   if (loading) return <div className="min-h-screen grid place-items-center text-zinc-500">Cargando…</div>;
   if (!session) return <Navigate to="/login" replace />;
   if (!profile) {
-    if (profileMissing) return <ProfileRetry />;
-    return <div className="min-h-screen grid place-items-center text-zinc-500">Preparando perfil…</div>;
+    if (profileMissing || stuck) return <ProfileRetry />;
+    return (
+      <div className="min-h-screen grid place-items-center text-zinc-500 gap-3 flex-col">
+        <div>Preparando perfil…</div>
+        <button
+          onClick={() => retryLoadProfile()}
+          className="text-xs text-gold underline"
+          data-testid="profile-prepare-retry"
+        >
+          Tarda demasiado, reintentar
+        </button>
+      </div>
+    );
   }
   if (!profile.activo) return <div className="min-h-screen grid place-items-center text-zinc-400">Tu cuenta está desactivada.</div>;
   if (role && profile.rol !== role) return <Navigate to={profile.rol === 'admin' ? '/admin' : '/app'} replace />;
@@ -60,6 +82,7 @@ export default function App() {
               <Route path="personal" element={<AdminPersonal />} />
               <Route path="tareas" element={<AdminTasks />} />
               <Route path="tareas/:id" element={<AdminTaskDetail />} />
+              <Route path="pendientes" element={<AdminChecklist />} />
               <Route path="config" element={<AdminConfig />} />
             </Route>
             <Route path="/app" element={<RoleGate role="personal"><StaffLayout /></RoleGate>}>

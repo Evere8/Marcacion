@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useRealtime } from '../../hooks/useRealtime';
+import { useAuth } from '../../contexts/AuthContext';
 import { MapContainer, TileLayer, Marker, Popup, CircleMarker } from 'react-leaflet';
 import L from 'leaflet';
-import { Clock, AlertTriangle, MapPin, UserX, ClipboardList, BellRing, LogIn as InIcon, LogOut as OutIcon, Activity, ExternalLink } from 'lucide-react';
+import { Clock, AlertTriangle, MapPin, UserX, ClipboardList, BellRing, LogIn as InIcon, LogOut as OutIcon, Activity, ExternalLink, CheckSquare, Plus, Repeat } from 'lucide-react';
 import { Badge } from '../../components/ui/badge';
 import { formatTime, minutesToText, todayISO } from '../../lib/format';
-import { sendNotification, sendNotificationBulk } from '../../hooks/useNotifications';
+import { sendNotification, sendNotificationBulk, requestNotificationPermission } from '../../hooks/useNotifications';
 import { mapsUrl } from '../../lib/gps';
 import { toast } from 'sonner';
 
@@ -17,30 +19,44 @@ const goldIcon = L.divIcon({
 });
 
 export default function Dashboard() {
+  const { user } = useAuth();
   const [marks, setMarks] = useState([]);
   const [personal, setPersonal] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [selected, setSelected] = useState(null);
+  const [cfg, setCfg] = useState({ hora_entrada: '08:00', hora_salida: '17:00', tolerancia_minutos: 10 });
+  const [pendings, setPendings] = useState([]);
+
+  useEffect(() => { requestNotificationPermission(); }, []);
 
   async function loadAll() {
     const today = todayISO();
     const safe = (p) => p.then((r) => r).catch(() => ({ data: [] }));
-    const [m, p, t] = await Promise.all([
+    const [m, p, t, c, ch] = await Promise.all([
       safe(supabase.from('marks').select('*, profiles:user_id(nombre,foto_perfil,email)').eq('fecha', today).order('created_at', { ascending: false })),
       safe(supabase.from('profiles').select('*').eq('activo', true)),
       safe(supabase.from('tasks').select('*, assignee:assignee_id(nombre)').order('created_at', { ascending: false }).limit(30)),
+      safe(supabase.from('attendance_config').select('*').limit(1).maybeSingle()),
+      user ? safe(supabase.from('checklists').select('*').eq('user_id', user.id).eq('fecha', today).eq('completado', false).order('created_at')) : Promise.resolve({ data: [] }),
     ]);
     setMarks(m.data || []);
     setPersonal(p.data || []);
     setTasks(t.data || []);
+    setPendings(ch.data || []);
+    if (c.data) setCfg({
+      hora_entrada: c.data.hora_entrada?.slice(0, 5) || '08:00',
+      hora_salida: c.data.hora_salida?.slice(0, 5) || '17:00',
+      tolerancia_minutos: c.data.tolerancia_minutos ?? 10,
+    });
   }
 
-  useEffect(() => { loadAll(); }, []);
+  useEffect(() => { loadAll(); /* eslint-disable-next-line */ }, [user?.id]);
   useRealtime('dash_marks', (ch) => {
     const safeOn = (...args) => { try { ch.on(...args); } catch (e) { /* noop */ } };
     safeOn('postgres_changes', { event: '*', schema: 'public', table: 'marks' }, loadAll);
     safeOn('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, loadAll);
     safeOn('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, loadAll);
+    safeOn('postgres_changes', { event: '*', schema: 'public', table: 'checklists' }, loadAll);
   }, []);
 
   const sinMarcar = useMemo(() => {
@@ -48,16 +64,58 @@ export default function Dashboard() {
     return personal.filter((p) => p.rol === 'personal' && !today.includes(p.id));
   }, [marks, personal]);
 
-  const atrasos = useMemo(() => {
-    const agg = {};
-    for (const m of marks) {
-      const key = m.user_id;
-      if (!agg[key]) agg[key] = { nombre: m.profiles?.nombre || '—', entrada: 0, salida: 0 };
-      if (m.tipo === 'entrada') agg[key].entrada = Math.max(agg[key].entrada, m.retraso_minutos || 0);
-      else agg[key].salida = Math.max(agg[key].salida, m.retraso_minutos || 0);
+  // Detailed per-employee daily report against schedule.
+  const dailyReport = useMemo(() => {
+    const tol = cfg.tolerancia_minutos ?? 10;
+    const [eh, em] = cfg.hora_entrada.split(':').map(Number);
+    const [sh, sm] = cfg.hora_salida.split(':').map(Number);
+    const targetEntrada = eh * 60 + em;
+    const targetSalida = sh * 60 + sm;
+
+    const byUser = {};
+    for (const p of personal.filter((x) => x.rol === 'personal')) {
+      byUser[p.id] = { id: p.id, nombre: p.nombre, foto_perfil: p.foto_perfil, entrada: null, salida: null };
     }
-    return Object.entries(agg).map(([id, v]) => ({ id, ...v })).sort((a, b) => b.entrada - a.entrada);
-  }, [marks]);
+    for (const m of marks) {
+      if (!byUser[m.user_id]) continue;
+      if (m.tipo === 'entrada' && !byUser[m.user_id].entrada) byUser[m.user_id].entrada = m;
+      if (m.tipo === 'salida') byUser[m.user_id].salida = m;
+    }
+    return Object.values(byUser).map((u) => {
+      let entradaStatus = 'pendiente';
+      let entradaDelta = null;
+      if (u.entrada) {
+        const [h, mi] = (u.entrada.hora || '00:00').split(':').map(Number);
+        entradaDelta = (h * 60 + mi) - targetEntrada;
+        if (entradaDelta <= 0) entradaStatus = 'temprano';
+        else if (entradaDelta <= tol) entradaStatus = 'a_tiempo';
+        else entradaStatus = 'tarde';
+      }
+      let salidaStatus = 'pendiente';
+      let salidaDelta = null;
+      if (u.salida) {
+        const [h, mi] = (u.salida.hora || '00:00').split(':').map(Number);
+        salidaDelta = (h * 60 + mi) - targetSalida;
+        if (salidaDelta < 0) salidaStatus = 'temprano';
+        else salidaStatus = 'a_tiempo';
+      }
+      return { ...u, entradaStatus, entradaDelta, salidaStatus, salidaDelta };
+    }).sort((a, b) => {
+      const order = { tarde: 0, pendiente: 1, a_tiempo: 2, temprano: 3 };
+      return order[a.entradaStatus] - order[b.entradaStatus];
+    });
+  }, [marks, personal, cfg]);
+
+  const reportSummary = useMemo(() => {
+    const r = { aTiempo: 0, tarde: 0, sinMarcar: 0, completaron: 0 };
+    for (const u of dailyReport) {
+      if (u.entradaStatus === 'pendiente') r.sinMarcar++;
+      else if (u.entradaStatus === 'tarde') r.tarde++;
+      else r.aTiempo++;
+      if (u.salida) r.completaron++;
+    }
+    return r;
+  }, [dailyReport]);
 
   const mapCenter = marks.find((m) => m.latitud)
     ? [marks.find((m) => m.latitud).latitud, marks.find((m) => m.latitud).longitud]
@@ -80,6 +138,21 @@ export default function Dashboard() {
       link: '/app/marcar',
     });
     toast.success(`Aviso enviado a ${sinMarcar.length} empleados`);
+  }
+
+  async function togglePending(it) {
+    setPendings((prev) => prev.filter((x) => x.id !== it.id));
+    await supabase.from('checklists').update({ completado: true }).eq('id', it.id);
+  }
+  async function renewForTomorrow(it) {
+    const t = new Date();
+    t.setDate(t.getDate() + 1);
+    const tomorrow = t.toLocaleDateString('en-CA');
+    const { error } = await supabase.from('checklists').insert({
+      user_id: user.id, titulo: it.titulo, repetible: it.repetible, fecha: tomorrow,
+    });
+    if (error) toast.error(error.message);
+    else toast.success(`Renovado para mañana: ${it.titulo}`);
   }
 
   return (
@@ -191,23 +264,37 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* ATRASOS */}
-        <div className="card-premium p-5 fade-up" data-testid="atrasos-list">
+        {/* REPORTE DEL DÍA · horarios */}
+        <div className="card-premium p-5 fade-up" data-testid="daily-schedule-report">
           <div className="flex items-center justify-between mb-4">
-            <div><p className="label-eyebrow">Desempeño</p><h2 className="text-lg font-black">Atrasos del día</h2></div>
+            <div>
+              <p className="label-eyebrow">Desempeño del día</p>
+              <h2 className="text-lg font-black">Reporte de horarios</h2>
+              <p className="text-[11px] text-zinc-500 mt-0.5">Entrada {cfg.hora_entrada} · Salida {cfg.hora_salida} · Tolerancia {cfg.tolerancia_minutos}m</p>
+            </div>
             <Clock className="w-4 h-4 text-yellow-400" />
           </div>
+          <div className="grid grid-cols-4 gap-2 mb-4 text-center">
+            <div className="rounded-lg bg-green-500/10 border border-green-500/20 p-2">
+              <p className="text-[10px] text-zinc-400 uppercase tracking-wider">A tiempo</p>
+              <p className="text-xl font-black text-green-400">{reportSummary.aTiempo}</p>
+            </div>
+            <div className="rounded-lg bg-yellow-500/10 border border-yellow-500/20 p-2">
+              <p className="text-[10px] text-zinc-400 uppercase tracking-wider">Tarde</p>
+              <p className="text-xl font-black text-yellow-400">{reportSummary.tarde}</p>
+            </div>
+            <div className="rounded-lg bg-red-500/10 border border-red-500/20 p-2">
+              <p className="text-[10px] text-zinc-400 uppercase tracking-wider">Sin marcar</p>
+              <p className="text-xl font-black text-red-400">{reportSummary.sinMarcar}</p>
+            </div>
+            <div className="rounded-lg bg-blue-500/10 border border-blue-500/20 p-2">
+              <p className="text-[10px] text-zinc-400 uppercase tracking-wider">Salieron</p>
+              <p className="text-xl font-black text-blue-400">{reportSummary.completaron}</p>
+            </div>
+          </div>
           <div className="space-y-2 max-h-[280px] overflow-auto">
-            {atrasos.length === 0 && <p className="text-zinc-500 text-sm py-4 text-center">Sin datos.</p>}
-            {atrasos.map((a) => (
-              <div key={a.id} className="flex items-center gap-3 p-2 rounded-xl hover:bg-white/5">
-                <div className="flex-1 min-w-0"><p className="text-sm font-bold text-white truncate">{a.nombre}</p></div>
-                <div className="flex items-center gap-2 text-[11px]">
-                  <span className={`px-2 py-1 rounded-md ${a.entrada > 0 ? 'bg-yellow-500/15 text-yellow-400' : 'bg-green-500/15 text-green-400'}`}>E: {a.entrada > 0 ? `+${a.entrada}m` : '✓'}</span>
-                  <span className={`px-2 py-1 rounded-md ${a.salida > 0 ? 'bg-blue-500/15 text-blue-400' : 'bg-zinc-500/15 text-zinc-400'}`}>S: {a.salida > 0 ? `+${a.salida}m` : '—'}</span>
-                </div>
-              </div>
-            ))}
+            {dailyReport.length === 0 && <p className="text-zinc-500 text-sm py-4 text-center">Sin personal activo.</p>}
+            {dailyReport.map((u) => <ScheduleRow key={u.id} u={u} />)}
           </div>
         </div>
 
@@ -231,6 +318,79 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+
+      {/* ADMIN PENDIENTES quick access */}
+      <div className="card-premium p-5 fade-up" data-testid="admin-pendings-quick">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <p className="label-eyebrow">Acceso rápido</p>
+            <h2 className="text-lg font-black">Mis pendientes</h2>
+          </div>
+          <Link to="/admin/pendientes" className="text-xs text-gold font-bold uppercase tracking-wider flex items-center gap-1">
+            <Plus className="w-3.5 h-3.5" /> Gestionar
+          </Link>
+        </div>
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
+          {pendings.slice(0, 6).map((it) => (
+            <div key={it.id} className="rounded-xl bg-white/5 hover:bg-white/10 p-3 flex items-center gap-3" data-testid={`admin-home-pending-${it.id}`}>
+              <button
+                onClick={() => togglePending(it)}
+                aria-label="Completar"
+                className="shrink-0 w-6 h-6 rounded-md border border-white/30 hover:border-gold transition-all"
+                data-testid={`admin-home-pending-toggle-${it.id}`}
+              />
+              <p className="flex-1 text-sm text-white truncate">{it.titulo}</p>
+              {it.repetible && <Repeat className="w-3.5 h-3.5 text-gold shrink-0" />}
+              <button
+                onClick={() => renewForTomorrow(it)}
+                className="shrink-0 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-gold/15 text-gold hover:bg-gold/25 border border-gold/30"
+                data-testid={`admin-home-pending-renew-${it.id}`}
+                title="Renovar para mañana"
+              >
+                Mañana
+              </button>
+            </div>
+          ))}
+          {pendings.length === 0 && (
+            <Link to="/admin/pendientes" className="col-span-full rounded-xl bg-white/5 hover:bg-white/10 p-4 text-center text-zinc-500 block">
+              <CheckSquare className="w-6 h-6 mx-auto mb-1 opacity-50" />
+              <p className="text-sm">Sin pendientes hoy. Toca para crear uno.</p>
+            </Link>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ScheduleRow({ u }) {
+  const eMap = {
+    a_tiempo: { c: 'bg-green-500/15 text-green-300 border-green-500/30', t: 'A tiempo' },
+    tarde: { c: 'bg-red-500/15 text-red-300 border-red-500/30', t: 'Tarde' },
+    temprano: { c: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30', t: 'Temprano' },
+    pendiente: { c: 'bg-zinc-500/15 text-zinc-400 border-zinc-500/30', t: 'No marcó' },
+  };
+  const sMap = {
+    a_tiempo: { c: 'bg-blue-500/15 text-blue-300 border-blue-500/30', t: 'OK' },
+    temprano: { c: 'bg-yellow-500/15 text-yellow-300 border-yellow-500/30', t: 'Temprano' },
+    pendiente: { c: 'bg-zinc-500/10 text-zinc-500 border-zinc-500/20', t: '—' },
+  };
+  const e = eMap[u.entradaStatus];
+  const s = sMap[u.salidaStatus];
+  return (
+    <div className="flex items-center gap-3 p-2 rounded-xl hover:bg-white/5" data-testid={`schedule-row-${u.id}`}>
+      <Avatar src={u.foto_perfil} name={u.nombre} size={28} />
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-bold text-white truncate">{u.nombre}</p>
+        <p className="text-[10px] text-zinc-500">
+          {u.entrada ? `E ${u.entrada.hora?.slice(0, 5)}` : 'E —'}
+          {' · '}
+          {u.salida ? `S ${u.salida.hora?.slice(0, 5)}` : 'S —'}
+          {u.entradaDelta !== null && u.entradaStatus === 'tarde' && <span className="text-red-400 font-bold"> · +{u.entradaDelta}m</span>}
+        </p>
+      </div>
+      <span className={`px-2 py-0.5 rounded-md border text-[10px] font-bold uppercase tracking-wider ${e.c}`}>{e.t}</span>
+      <span className={`px-2 py-0.5 rounded-md border text-[10px] font-bold uppercase tracking-wider ${s.c}`}>{s.t}</span>
     </div>
   );
 }
