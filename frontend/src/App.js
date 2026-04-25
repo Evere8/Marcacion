@@ -17,14 +17,17 @@ import StaffHistory from './pages/staff/History';
 import StaffTasks from './pages/staff/Tasks';
 import StaffTaskDetail from './pages/staff/TaskDetail';
 import StaffChecklist from './pages/staff/Checklist';
-import SetupRequired from './components/SetupRequired';
+import ProfileRetry from './components/ProfileRetry';
 import './App.css';
 
 function RoleGate({ role, children }) {
-  const { session, profile, loading } = useAuth();
+  const { session, profile, profileMissing, loading } = useAuth();
   if (loading) return <div className="min-h-screen grid place-items-center text-zinc-500">Cargando…</div>;
   if (!session) return <Navigate to="/login" replace />;
-  if (!profile) return <SetupRequired />;
+  if (!profile) {
+    if (profileMissing) return <ProfileRetry />;
+    return <div className="min-h-screen grid place-items-center text-zinc-500">Preparando perfil…</div>;
+  }
   if (!profile.activo) return <div className="min-h-screen grid place-items-center text-zinc-400">Tu cuenta está desactivada.</div>;
   if (role && profile.rol !== role) return <Navigate to={profile.rol === 'admin' ? '/admin' : '/app'} replace />;
   return children;

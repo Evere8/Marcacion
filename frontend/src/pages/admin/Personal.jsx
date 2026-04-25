@@ -84,9 +84,15 @@ export default function Personal() {
     toast.success(!p.activo ? 'Activado' : 'Desactivado');
   }
   async function del(p) {
-    if (!window.confirm(`Eliminar perfil de ${p.nombre}?`)) return;
-    await supabase.from('profiles').delete().eq('id', p.id);
-    toast.success('Eliminado');
+    if (!window.confirm(`Eliminar permanentemente a ${p.nombre}?\n\nEsto borra el usuario de la base de datos Y de la autenticación.`)) return;
+    try {
+      const { error } = await supabase.rpc('admin_delete_user', { target_id: p.id });
+      if (error) throw error;
+      toast.success('Usuario eliminado por completo');
+      load();
+    } catch (e) {
+      toast.error(`No se pudo eliminar: ${e.message || e}. Asegúrate de haber ejecutado 06_admin_delete.sql.`);
+    }
   }
 
   const filtered = list.filter((p) => !q || `${p.nombre} ${p.email}`.toLowerCase().includes(q.toLowerCase()));

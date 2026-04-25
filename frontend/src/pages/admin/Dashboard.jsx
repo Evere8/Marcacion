@@ -16,57 +16,31 @@ const goldIcon = L.divIcon({
   iconSize: [22, 22], iconAnchor: [11, 11],
 });
 
-function avatarIcon(name, photo) {
-  const initials = (name || '?').split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase();
-  const label = (name || '').split(' ').slice(0, 2).join(' ');
-  const bg = photo ? `background-image:url('${photo}');background-size:cover;background-position:center;` : '';
-  const inner = photo ? '' : `<span style="color:#D4AF37;font-weight:900;font-size:12px;">${initials}</span>`;
-  return L.divIcon({
-    className: '',
-    html: `
-      <div style="display:flex;flex-direction:column;align-items:center;transform:translateY(-18px);">
-        <div style="position:relative;width:42px;height:42px;border-radius:50%;border:2px solid #D4AF37;${bg}background-color:rgba(212,175,55,0.15);display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 4px rgba(212,175,55,0.35),0 0 0 8px rgba(212,175,55,0.15);">
-          ${inner}
-          <span style="position:absolute;bottom:-3px;right:-3px;width:10px;height:10px;border-radius:50%;background:#34C759;border:2px solid #050505;"></span>
-        </div>
-        <div style="margin-top:4px;background:rgba(5,5,5,0.85);border:1px solid rgba(212,175,55,0.3);padding:2px 6px;border-radius:10px;white-space:nowrap;font-size:10px;font-weight:700;color:#fff;max-width:120px;overflow:hidden;text-overflow:ellipsis;">${label}</div>
-      </div>`,
-    iconSize: [42, 60], iconAnchor: [21, 60],
-  });
-}
-
 export default function Dashboard() {
   const [marks, setMarks] = useState([]);
   const [personal, setPersonal] = useState([]);
   const [tasks, setTasks] = useState([]);
-  const [live, setLive] = useState([]); // live_positions
   const [selected, setSelected] = useState(null);
 
   async function loadAll() {
     const today = todayISO();
     const safe = (p) => p.then((r) => r).catch(() => ({ data: [] }));
-    const fifteenMinAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
-    const [m, p, t, lp] = await Promise.all([
+    const [m, p, t] = await Promise.all([
       safe(supabase.from('marks').select('*, profiles:user_id(nombre,foto_perfil,email)').eq('fecha', today).order('created_at', { ascending: false })),
       safe(supabase.from('profiles').select('*').eq('activo', true)),
       safe(supabase.from('tasks').select('*, assignee:assignee_id(nombre)').order('created_at', { ascending: false }).limit(30)),
-      safe(supabase.from('live_positions').select('*').gte('updated_at', fifteenMinAgo)),
     ]);
     setMarks(m.data || []);
     setPersonal(p.data || []);
     setTasks(t.data || []);
-    setLive(lp.data || []);
   }
 
   useEffect(() => { loadAll(); }, []);
   useRealtime('dash_marks', (ch) => {
-    // Wrap each .on() so that a missing table in the realtime publication
-    // (e.g. live_positions not migrated yet) doesn't break the whole channel.
     const safeOn = (...args) => { try { ch.on(...args); } catch (e) { /* noop */ } };
     safeOn('postgres_changes', { event: '*', schema: 'public', table: 'marks' }, loadAll);
     safeOn('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, loadAll);
     safeOn('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, loadAll);
-    safeOn('postgres_changes', { event: '*', schema: 'public', table: 'live_positions' }, loadAll);
   }, []);
 
   const sinMarcar = useMemo(() => {
@@ -85,18 +59,9 @@ export default function Dashboard() {
     return Object.entries(agg).map(([id, v]) => ({ id, ...v })).sort((a, b) => b.entrada - a.entrada);
   }, [marks]);
 
-  const mapCenter = live.find((l) => l.latitud)
-    ? [live[0].latitud, live[0].longitud]
-    : marks.find((m) => m.latitud)
+  const mapCenter = marks.find((m) => m.latitud)
     ? [marks.find((m) => m.latitud).latitud, marks.find((m) => m.latitud).longitud]
-    : [-16.5, -68.15];
-
-  // Map of user_id → profile for live markers
-  const profileById = useMemo(() => {
-    const m = {};
-    for (const p of personal) m[p.id] = p;
-    return m;
-  }, [personal]);
+    : [-25.3, -57.6]; // Asunción, Paraguay
 
   async function enviarAvisoIndividual(user_id, nombre) {
     await sendNotification(user_id, {
@@ -131,32 +96,12 @@ export default function Dashboard() {
         {/* LIVE MAP */}
         <div className="card-premium lg:col-span-2 p-0 overflow-hidden fade-up">
           <div className="flex items-center justify-between p-5 border-b border-white/5">
-            <div><p className="label-eyebrow mb-1">Ubicación en vivo</p><h2 className="text-lg font-black">Personal en tiempo real</h2></div>
-            <Badge className="bg-gold/15 text-gold border border-gold/30 uppercase tracking-wider">{live.length} en línea</Badge>
+            <div><p className="label-eyebrow mb-1">Ubicación</p><h2 className="text-lg font-black">Marcaciones de hoy</h2></div>
+            <Badge className="bg-gold/15 text-gold border border-gold/30 uppercase tracking-wider">{marks.filter(m=>m.latitud).length} puntos</Badge>
           </div>
           <div className="h-[420px]">
             <MapContainer center={mapCenter} zoom={13} scrollWheelZoom style={{ height: '100%', width: '100%' }}>
               <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" attribution='&copy; CARTO &copy; OpenStreetMap' />
-              {/* Live employee positions */}
-              {live.map((l) => {
-                const p = profileById[l.user_id];
-                if (!p) return null;
-                return (
-                  <Marker key={`live-${l.user_id}`} position={[l.latitud, l.longitud]} icon={avatarIcon(p.nombre, p.foto_perfil)}>
-                    <Popup>
-                      <div className="space-y-1">
-                        <p className="font-bold text-white">{p.nombre}</p>
-                        <p className="text-xs text-green-400">🟢 En línea · precisión {Math.round(l.precision_m || 0)} m</p>
-                        <p className="text-[11px] text-zinc-500">Actualizado: {new Date(l.updated_at).toLocaleTimeString('es-ES')}</p>
-                        <a href={mapsUrl(l.latitud, l.longitud)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 mt-2 text-[11px] text-gold font-bold uppercase tracking-wider">
-                          <ExternalLink className="w-3 h-3" /> Abrir en Maps
-                        </a>
-                      </div>
-                    </Popup>
-                  </Marker>
-                );
-              })}
-              {/* Clock-in / out location pins */}
               {marks.filter((m) => m.latitud).map((m) => (
                 <Marker key={m.id} position={[m.latitud, m.longitud]} icon={goldIcon} eventHandlers={{ click: () => setSelected(m) }}>
                   <Popup>

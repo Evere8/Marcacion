@@ -50,8 +50,8 @@ export default function StaffHome() {
     <div className="space-y-6" data-testid="staff-home">
       {/* CLOCK CARD */}
       <div className="card-premium p-6 text-center fade-up">
-        <p className="label-eyebrow">Hora actual</p>
-        <p className="text-6xl font-black tracking-tighter mt-2 gold-gradient-text" data-testid="current-time">{now.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}</p>
+        <p className="label-eyebrow">Hora actual · Paraguay</p>
+        <p className="text-6xl font-black tracking-tighter mt-2 gold-gradient-text" data-testid="current-time">{now.toLocaleTimeString('es-ES', { timeZone: 'America/Asuncion', hour: '2-digit', minute: '2-digit' })}</p>
         <p className="text-xs text-zinc-500 mt-1">Entrada {cfg.hora_entrada} · Salida {cfg.hora_salida}</p>
 
         <div className="mt-6">

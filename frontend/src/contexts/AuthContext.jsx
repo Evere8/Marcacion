@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 
 const AuthContext = createContext(null);
@@ -7,8 +7,10 @@ export function AuthProvider({ children }) {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [profileMissing, setProfileMissing] = useState(false);
+  const retriesRef = useRef(0);
 
-  async function loadProfile(userId) {
+  async function loadProfile(userId, { isRetry = false } = {}) {
     try {
       const { data, error } = await supabase
         .from('profiles')
@@ -18,21 +20,38 @@ export function AuthProvider({ children }) {
       if (error) {
         // eslint-disable-next-line no-console
         console.warn('[auth] loadProfile error:', error.message);
-        setProfile(null);
+        if (!isRetry && retriesRef.current < 2) {
+          retriesRef.current += 1;
+          setTimeout(() => loadProfile(userId, { isRetry: true }), 1200);
+        } else {
+          setProfileMissing(true);
+        }
         return;
       }
-      setProfile(data || null);
+      if (data) {
+        setProfile(data);
+        setProfileMissing(false);
+        retriesRef.current = 0;
+      } else if (!isRetry && retriesRef.current < 2) {
+        retriesRef.current += 1;
+        setTimeout(() => loadProfile(userId, { isRetry: true }), 1200);
+      } else {
+        setProfileMissing(true);
+      }
     } catch (e) {
       // eslint-disable-next-line no-console
       console.warn('[auth] loadProfile threw:', e);
-      setProfile(null);
+      if (!isRetry && retriesRef.current < 2) {
+        retriesRef.current += 1;
+        setTimeout(() => loadProfile(userId, { isRetry: true }), 1200);
+      } else {
+        setProfileMissing(true);
+      }
     }
   }
 
   useEffect(() => {
     let alive = true;
-
-    // Failsafe: guarantee we NEVER get stuck on "Cargando…"
     const failsafe = setTimeout(() => { if (alive) setLoading(false); }, 9000);
 
     (async () => {
@@ -53,6 +72,8 @@ export function AuthProvider({ children }) {
     const { data: sub } = supabase.auth.onAuthStateChange(async (_ev, s) => {
       if (!alive) return;
       setSession(s || null);
+      retriesRef.current = 0;
+      setProfileMissing(false);
       if (s?.user) {
         try { await loadProfile(s.user.id); } catch {}
       } else {
@@ -74,20 +95,38 @@ export function AuthProvider({ children }) {
   }
 
   async function signOut() {
-    try { await supabase.auth.signOut(); } catch {}
+    // 1. clear local state + storage FIRST so redirect never bounces back
     setSession(null);
     setProfile(null);
-    // Hard-reset to login to avoid any stuck state
+    setProfileMissing(false);
+    try { localStorage.clear(); } catch {}
+    try { sessionStorage.clear(); } catch {}
+    // 2. supabase sign-out with a hard 2s timeout
+    try {
+      await Promise.race([
+        supabase.auth.signOut(),
+        new Promise((r) => setTimeout(r, 2000)),
+      ]);
+    } catch {}
+    // 3. navigate
     window.location.replace('/login');
+  }
+
+  async function retryLoadProfile() {
+    retriesRef.current = 0;
+    setProfileMissing(false);
+    if (session?.user) await loadProfile(session.user.id);
   }
 
   const value = {
     session,
     profile,
+    profileMissing,
     user: session?.user || null,
     loading,
     signIn,
     signOut,
+    retryLoadProfile,
     refreshProfile: () => session?.user && loadProfile(session.user.id),
   };
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

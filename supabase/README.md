@@ -1,6 +1,6 @@
 # ALFATWIN – Supabase Setup
 
-Run the five SQL files **in order** in the Supabase SQL Editor (Dashboard → SQL Editor → New Query):
+Run the SQL files **in order** in the Supabase SQL Editor (Dashboard → SQL Editor → New Query):
 
 1. `01_schema.sql` – tables, triggers, realtime.
 2. `02_rls.sql`    – row-level security policies.
@@ -10,7 +10,7 @@ Run the five SQL files **in order** in the Supabase SQL Editor (Dashboard → SQ
    - password: `richy123`
    - ✅ Auto Confirm User
 5. `04_seed.sql` – defaults + promote Richy to admin.
-6. `05_live_positions.sql` – live realtime positions table (new).
+6. `06_admin_delete.sql` – RPC para borrar usuario en cascada (auth + profile).
 
 ## Frontend env (already configured)
 
