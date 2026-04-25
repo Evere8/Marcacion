@@ -1,74 +1,75 @@
 <analysis>**original_problem_statement**: 
-The user wants to build a professional employee attendance and task management system (PWA + Supabase + Vercel). Key features include: real-time clock-in/out with GPS location validation, task assignments with real-time chat, personal checklists for employees, a full admin dashboard (real-time monitoring, tardiness reports, user management), and push notifications. 
-**PRODUCT REQUIREMENTS**: 
+Sistema profesional de marcación de personal (PWA + Supabase + Vercel) con marcación de entrada/salida en tiempo real, gestión de tareas con chat, checklists personales, dashboard de administrador y notificaciones push.
+PRODUCT REQUIREMENTS:
 - Pure React PWA frontend (deployable to Vercel).
-- Entire backend handled by Supabase (Auth, DB, Realtime, Storage) via SQL scripts.
+- Entire backend handled by Supabase (Auth, DB, Realtime, Storage).
 - NO external backend dependencies like FastAPI or MongoDB.
 - ALFATWIN premium dark UI design.
 - Accurate GPS tracking during clock-ins with Paraguay timezone logic.
 
-**User's preferred language**: Spanish (INSTRUCT next agent to respond in the user's preferred language only: Spanish).
+**User's preferred language**: Spanish (You MUST respond in the user's preferred language only: Spanish)
 
-**what currently exists?**: 
-A fully functional React PWA utilizing Supabase for all backend needs. The application features an Admin Dashboard (real-time marks overview, user management, task assignment) and a Staff Interface (GPS-based clock-in, assigned tasks with chat, personal checklists). A premium dark Obsidian UI has been applied. All necessary Supabase SQL scripts (Schema, RLS, Seed, Storage, and RPCs) are generated in the  directory. 
+**what currently exists?** 
+A functional React PWA using Supabase for all backend needs. It features an Admin Dashboard (real-time marks, user management, tasks) and a Staff Interface (GPS clock-in, checklists). A premium dark Obsidian UI is applied. Currently, the application is suffering from a critical authentication bug where it hangs infinitely on a Preparando perfil... screen upon page reload or after being idle.
 
 **Last working item**: 
-    - Last item agent was working: Fixing infinite loading bugs in  during logout/reload, removing live location tracking features at the user's request (reverting to point-in-time GPS clock-ins), fixing the timezone to Paraguay, and creating a cascade delete RPC () to completely remove users from Supabase Auth and DB.
-    - Status: USER VERIFICATION PENDING
-    - Agent Testing Done: Y
-    - Which testing method agent to use?: Screenshot tool.
+    - Last item agent was working: Fixing a critical infinite loading bug (Preparando perfil...) in . The agent tried multiple complex workarounds, including bypassing the  client to make direct REST API calls, to avoid deadlocks during profile fetching on reload.
+    - Status: IN PROGRESS
+    - Agent Testing Done: Y (Failed repeatedly)
+    - Which testing method agent to use?: Screenshot tool
     - User Testing Done: N
 
-**All Pending/In progress Issue list**:
-  Issue 1: Supabase RPC Execution for Cascade Deletion
-     - Attempted fixes: The agent created  to handle full user deletion via Supabase RPC. It attempted to execute this script automatically via bash but failed ().
-     - Next debug checklist: Check if the user has manually executed  in their Supabase SQL editor. The frontend relies on this RPC to delete users.
-     - Why fix this issue and what will be achieved with the fix?: Ensures deleted employees are removed from Supabase Auth, not just the public  table.
+**All Pending/In progress Issue list**:  
+  Issue 1: Infinite Loading Bug on Reload / Idle (Preparando perfil...) (P0)
+     - Attempted fixes: Agent rewrote  multiple times. It tried using , bypassing , and implementing a custom  wrapper with timeouts to bypass  client hangs. The screenshots still showed the app hanging.
+     - Next debug checklist: Review . The state machine might be over-complicated now. Ensure  or the  listener properly resolves and updates both the  and  states without deadlocking. Check for React 19 Strict Mode double-mounting race conditions causing the profile fetch to abort or hang.
+     - Why fix this issue and what will be achieved with the fix?: Critical blocker. Users are completely locked out of the app when the page is refreshed or left idle.
+     - Status: IN PROGRESS
+     - Is recurring issue?: Y (Recurred from previous fork)
+     - Should Test frontend/backend/both after fix?: Frontend
+     - Blocked on other issue: None
+
+  Issue 2: Supabase RPC Execution for Cascade Deletion (P1)
+     - Attempted fixes: The previous fork created  to handle full user deletion via Supabase RPC, but it failed to execute via bash.
+     - Next debug checklist: Check if the user has manually executed  in their Supabase SQL editor.
+     - Why fix this issue and what will be achieved with the fix?: Ensures deleted employees are completely removed from Supabase Auth, not just the  table.
      - Status: USER VERIFICATION PENDING
      - Is recurring issue?: N
      - Should Test frontend/backend/both after fix?: Backend
-     - Blocked on other issue: N/A
 
-  Issue 2: True Push Notifications are Mocked
-     - Attempted fixes: The agent created a  hook that inserts records into a  table. However, actual Web Push API (Service Worker push events, VAPID keys) or mobile Push Notifications were NOT fully implemented.
-     - Next debug checklist: Implement Web Push API in , set up VAPID keys, or use a Supabase Edge Function to dispatch actual push notifications to devices.
-     - Why fix this issue and what will be achieved with the fix?: The user explicitly requested elimina las notificaciones por email solo notificaciones push (remove email, ONLY push notifications).
-     - Status: NOT STARTED
-     - Is recurring issue?: N
-     - Should Test frontend/backend/both after fix?: Both
+**In progress Task List**: 
+None. Agent was entirely blocked by the P0 bug.
 
-**In progress Task List**:
-None.
+**Upcoming and Future Tasks**
+  Task 1: Real Web Push Notifications Implementation (P0) - Integrate actual Web Push API / Service Worker logic for OS-level push notifications instead of just in-app database notifications. Configure them for: task assignments, task status changes, chat messages, and clock-in/out reminders.
+  Task 2: Schedule & Tardiness Logic (P1) - Implement logic to compare staff clock-ins with admin-configured schedules. Show detailed daily reports on the admin dashboard indicating who arrived late and who was on time.
+  Task 3: Quick Access Tasks & Checklists (P1) - Add quick access to pending tasks on the main staff and admin screens. Implement a button to renew or duplicate tasks/checklists for the next day.
+  Task 4: Task Urgency Controls (P1) - Add buttons in the Admin task details to change task urgency to apurar (yellow) and urgente (red). This action must trigger a push notification to the assigned staff member.
+  Task 5: Advanced Offline Caching (P2) - Expand PWA Service Worker to handle offline data mutations syncing for when staff lack internet access during clock-in.
 
-**Upcoming and Future Tasks**:
-  - Task 1: Implement Real Web Push Notifications (P0) - Integrate Web Push API / Service Worker logic for actual OS-level push notifications instead of just in-app database notifications.
-  - Task 2: Advanced Offline Caching (P1) - Expand PWA Service Worker to handle offline data mutations syncing for when staff lack internet access during clock-in.
+**Completed work in this session**
+- Bypassed service worker cache for fresh deployments in .
+*(No feature tasks were completed because the agent got stuck in a doom loop debugging the AuthContext bug).*
 
-**Completed work in this session**:
-  - Project scaffolded to strictly use React + Supabase (Removed FastAPI/MongoDB).
-  - PWA manifest and basic Service Worker created.
-  - Supabase SQL Scripts ( to ).
-  - AuthContext, Layouts, and Routing implemented.
-  - Admin Dashboard (Metrics, Users, Tasks, Config) implemented.
-  - Staff Dashboard (Home, GPS ClockIn, Checklist, Tasks, History) implemented.
-  - Realtime subscriptions fixed to accommodate React 19 Strict Mode double-mounts.
-  - GPS logic simplified and iOS user-gesture requirements fixed.
-  - ALFATWIN Premium UI/UX design integrated.
-  - Forced Paraguay timezone on timestamps.
+**Earlier issues found/mentioned but not fixed**
+   Issue 1: Main Agent failed to use Troubleshoot Subagent
+   - Debug checklist: Agent got stuck in a screenshot loop for ~20 iterations trying to fix  without success and without calling the troubleshoot subagent or taking a step back.
+   - Why to solve this issue and what will be achieved with this?: Prevents burning context window on failed brute-force attempts. 
+   - Should Test frontend/backend/both after fix: Frontend
+   - Is recurring issue?: Y
 
-**Earlier issues found/mentioned but not fixed**:
-  Issue 1: Main Agent failed to use Testing Agent ()
-   - Debug checklist: A thorough end-to-end test via  is required to ensure no hidden regressions exist in the PWA or Supabase Auth flow.
+   Issue 2: Main Agent failed to use Testing Agent ()
+   - Debug checklist: A thorough end-to-end test via  is required to ensure no hidden regressions exist in the PWA or Supabase Auth flow once the blocker is resolved.
    - Why to solve this issue and what will be achieved with this?: System instructions mandate using the testing agent before finishing the workflow.
    - Should Test frontend/backend/both after fix: Both
-   - Is recurring issue?: N
+   - Is recurring issue?: Y
 
-**Known issue recurrence from previous fork**:
-  - Issue recurrence in previous fork: N/A (First iteration)
-  - Recurrence count: 0
-  - Status: N/A
+**Known issue recurrence from previous fork**
+  - Issue recurrence in previous fork: Infinite loading in  during logout/reload.
+  - Recurrence count: 2
+  - Status: IN PROGRESS
 
-**Code Architecture**:
+**Code Architecture**
 /app
 ├── frontend
 │   ├── public
@@ -76,95 +77,89 @@ None.
 │   │   └── sw.js
 │   ├── src
 │   │   ├── components
-│   │   │   ├── Layout (AdminLayout.jsx, StaffLayout.jsx)
-│   │   │   ├── ui (shadcn components)
-│   │   │   ├── Logo.jsx, SetupRequired.jsx, ProfileRetry.jsx, NotificationsBell.jsx
 │   │   ├── contexts
 │   │   │   ├── AuthContext.jsx
 │   │   │   └── SystemConfigContext.jsx
 │   │   ├── hooks
-│   │   │   ├── useNotifications.js
-│   │   │   ├── useRealtime.js
-│   │   │   └── useLocationTracker.js
 │   │   ├── lib
-│   │   │   ├── supabase.js, gps.js, format.js, upload.js
+│   │   │   ├── supabase.js
 │   │   ├── pages
-│   │   │   ├── admin (Dashboard.jsx, Personal.jsx, Tasks.jsx, TaskDetail.jsx, Config.jsx)
-│   │   │   ├── staff (Home.jsx, ClockIn.jsx, History.jsx, Tasks.jsx, TaskDetail.jsx, Checklist.jsx)
-│   │   │   └── Login.jsx
 │   │   ├── App.js, App.css, index.css
 │   └── package.json
 ├── supabase
-│   ├── 01_schema.sql, 02_rls.sql, 03_storage.sql, 04_seed.sql, 05_live_positions.sql, 06_admin_delete.sql
-│   └── README.md
+│   ├── 01_schema.sql to 06_admin_delete.sql
 ├── memory
 │   ├── PRD.md
 │   └── test_credentials.md
-└── DEPLOY.md
 
-**Key Technical Concepts**:
-React.js, Progressive Web App (PWA), Supabase (Auth, PostgreSQL DB, Realtime WebSockets, Storage, RPC), Tailwind CSS (Dark/Obsidian Theme), HTML5 Geolocation API. No separate backend framework is used.
+**Key Technical Concepts**
+React.js, Progressive Web App (PWA), Supabase (Auth, PostgreSQL DB, Realtime WebSockets, Storage, RPC), Tailwind CSS. NO separate backend framework is used.
 
-**key DB schema**:
+**key DB schema**
   - : {id, nombre, edad, telefono, direccion, foto_perfil, email, rol, activo}
   - : {id, user_id, tipo, fecha, hora, latitud, longitud, direccion_geolocalizada, dispositivo_info, fake_gps_detected, retraso_minutos}
   - : {id, titulo, descripcion, urgencia, admin_id, fecha_limite}
-  - : {id, task_id, sender_id, message, visto}
-  - : {id, user_id, titulo, completado, repetible, fecha}
   - : {id, user_id, tipo, mensaje, link, leido}
 
-**changes in tech stack**:
-  - Eliminated FastAPI and MongoDB completely based on user request. App is purely a React Frontend interacting directly with a Supabase Backend.
+**changes in tech stack**
+  - None
 
-**All files of reference**: 
-  -  (Crucial for setting up the Supabase database)
-  -  (Core GPS handling)
-  -  (Auth and role-routing logic)
-  -  (PWA Service Worker)
-
-**Areas that need refactoring**:
-  - : Needs to be expanded to handle real Web Push APIs.
-  - : Heavily patched for infinite loading issues; might benefit from a cleaner state machine.
-
-**key api endpoints**:
-  - All endpoints are managed through the  SDK connecting to the user's provided Supabase URL.
-
-**Critical Info for New Agent**:
-  - **No FastAPI / No MongoDB**: Do NOT try to start or debug Python backend or Mongo. The architecture relies entirely on Supabase.
-  - **Timezone Requirements**: The user mandates that all timestamps and clock-ins reflect Paraguay Time. Check  and .
-  - **iOS Geolocation**: iOS requires user gestures (button taps) to request geolocation. Do not attempt auto-fetching GPS on component mount for PWAs.
-  - Ensure the user has executed  in their Supabase console for cascade user deletions to work correctly.
-
-**documents and test reports created in this job**:
+**All files of reference** 
+  -  (Currently heavily modified and likely needs a clean refactor)
   - 
   - 
   - 
 
-**Last 10 User Messages and any pending HUMAN messages**:
- 1. User provided images and requested changes: Fix infinite loading on reload/logout, adjust mobile logout button placement. Remove all live-tracking/location sharing prompts (revert to just point-in-time clock-in). Completely delete user from Authentication when deleted from the table. Fix timezone to Paraguay. (Agent fixed all items).
- 2. User requested corrections: iPhone not prompting for location (agent fixed by requiring a manual button tap first), Admin dashboard hanging (agent fixed by simplifying dashboard queries), Employee tasks not clickable/creatable (agent fixed state), History tab spinning endlessly (agent added fail-safes).
- 3. User requested corrections: Remove anti-fake GPS blocking as it's too restrictive. Add View Location buttons to open coordinates in maps. Show live positions of staff on the map if active. Prompt for background location permission upon PWA install. (Agent implemented these but later removed live tracking in message #1).
- 4. User reported realtime subscription errors upon login and pointed out the ALFATWIN logo was clipping. (Agent applied fixes: created  hook for safe mounting and changed image CSS to ).
- 5. User asked to proceed and set up everything, using their provided admin email (). (Agent built the core MVP).
- 6. User provided Supabase URL, Anon Key, and Service Role Key.
- 7. User specified rules: Pure React + Supabase + Vercel stack. No FastAPI/MongoDB. Push notifications only (no emails). (Agent acknowledged and planned accordingly).
+**Areas that need refactoring**: 
+  - : The previous agent applied many complex, hacky fixes (like direct REST API calls bypassing ,  checks) that failed. It desperately needs to be simplified to cleanly handle Supabase session state and profile fetching without deadlocking.
 
-**Project Health Check**:
-  - Broken: Push Notifications (Only database rows are created, no OS-level Web Push is dispatched).
-  - Mocked: Web Push API.
+**key api endpoints**
+  - All endpoints are managed through the  SDK.
 
-**3rd Party Integrations**:
-  - Supabase (Backend/Auth) — requires User API Key (Provided in history).
+**Critical Info for New Agent** 
+  - The application is purely React + Supabase. DO NOT attempt to run or debug Python/FastAPI/MongoDB.
+  - The previous agent got stuck in a doom loop trying to fix the  infinite loading bug, burning a lot of context. Take a fresh look at . 
+  - The user requested 4 major feature updates in Message 76 (Notifications, Schedules, Quick Tasks, Urgency buttons). The previous agent entirely ignored these to focus on the bug. Acknowledge these to the user in your plan and implement them once the blocker is fixed.
+  - Ensure you communicate exclusively in Spanish.
 
-**Testing status**:
-  - Testing agent used after significant changes: NO (Agent violated system prompt by skipping ).
+**documents and test reports created in this job** 
+  -  (Not updated this session)
+
+**Last 10 User Messages and any pending HUMAN messages** 
+ - Message 1 (Msg 76): User requested 4 new features: 1) Fully configure push notifications for key events. 2) Respect admin schedules for tardiness/attendance reporting. 3) Add quick access to tasks/checklists on main screens with next-day renewal. 4) Add apurar and urgente buttons to admin tasks to push notifications to staff. (NOT STARTED)
+ - Message 2 (Msg 7): User uploaded a screenshot showing a critical bug: App hangs at Preparando perfil... on reload or after being idle for a few minutes. (IN PROGRESS)
+
+**Project Health Check:**
+- Broken: App reload/auth state ( hangs infinitely).
+- Mocked: Web Push API (Notifications currently just insert rows into DB, no actual OS push).
+
+**3rd Party Integrations** 
+	 •	Supabase (Database, Auth, Realtime) — requires User API Key
+
+**Testing status**
+  - Testing agent used after significant changes: NO
   - Troubleshoot agent used after agent stuck in loop: NO
   - Test files created: []
-  - Known regressions: Push notifications lacking actual Web Push implementation.
+  - Known regressions:  fails to load profile on page refresh.
 
-**Credentials to test flow**:
-  - Check  (richy@gmail.com / richy123).
+**Credentials to test flow:**
+ - Admin:  / 
 
-**What agent forgot to execute**:
-  - Agent forgot to run  after the initial MVP implementation and major bug fixes.
-  - Agent forgot to fully implement actual OS-level Push Notifications (Web Push API) using VAPID keys, relying only on inserting rows into a Supabase  table.</analysis>
+**What agent forgot to execute**
+- The agent forgot to use the troubleshoot subagent when it was clearly stuck in a loop trying to fix the same  bug over 20+ steps.
+- The agent completely ignored the user's detailed feature requests in Message 76.
+- The agent forgot to test with .
+
+**Debugging checklist for current issue**
+    Issue: App hangs on Preparando perfil... indefinitely on page reload or after idle time.
+    
+    Frontend files to check: 
+    - 
+    - 
+    
+    Possible causes:
+    - Supabase client going to sleep and not resolving promises on wake.
+    - React 19 Strict Mode mounting the context twice, causing the second mount to hang because the first mount's promise swallowed the state update.
+    - State deadlocks: updating React state inside  leading to infinite re-renders or dropped updates.
+    
+    Suggested approach: Revert the overly complex REST API fetch hacks the previous agent added. Rely on  on mount, and fallback to . Use a simple  boolean. If  fetch hangs, implement a strict  timeout to force a logout or error state instead of hanging the UI indefinitely.</analysis>

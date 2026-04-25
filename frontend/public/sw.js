@@ -1,5 +1,5 @@
-// ALFATWIN service worker v3 — network-first for JS/HTML, cache for static assets.
-const CACHE = 'alfatwin-v3';
+// ALFATWIN service worker v5 — network-first for JS/HTML/API, cache for static assets only.
+const CACHE = 'alfatwin-v5';
 const CORE = ['/manifest.json', '/icons/icon-192.png', '/icons/icon-512.png'];
 
 self.addEventListener('install', (e) => {
