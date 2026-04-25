@@ -47,12 +47,19 @@ async function saveSubscriptionInDB(userId, sub) {
     endpoint: json.endpoint,
     p256dh: json.keys?.p256dh,
     auth: json.keys?.auth,
-    user_agent: navigator.userAgent,
   };
-  // Upsert by (user_id, endpoint).
-  const { error } = await supabase
+  // Try upserting WITH user_agent first (nice-to-have for diagnostics).
+  // If the column doesn't exist (PGRST204) fall back to the minimal row.
+  const withUA = { ...row, user_agent: navigator.userAgent };
+  let { error } = await supabase
     .from('push_subscriptions')
-    .upsert(row, { onConflict: 'user_id,endpoint' });
+    .upsert(withUA, { onConflict: 'user_id,endpoint' });
+  if (error && (error.code === 'PGRST204' || /user_agent/.test(error.message || ''))) {
+    const retry = await supabase
+      .from('push_subscriptions')
+      .upsert(row, { onConflict: 'user_id,endpoint' });
+    error = retry.error;
+  }
   if (error) throw error;
 }
 
