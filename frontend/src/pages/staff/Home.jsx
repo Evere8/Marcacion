@@ -38,7 +38,7 @@ export default function StaffHome() {
   useEffect(() => {
     load();
     requestNotificationPermission();
-    const i = setInterval(() => setNow(new Date()), 30000);
+    const i = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(i);
     // eslint-disable-next-line
   }, [user]);
@@ -53,6 +53,23 @@ export default function StaffHome() {
   const hasEntrada = todayMarks.some((m) => m.tipo === 'entrada');
   const hasSalida = todayMarks.some((m) => m.tipo === 'salida');
   const nextAction = !hasEntrada ? 'entrada' : !hasSalida ? 'salida' : null;
+
+  // Cronómetro de tiempo trabajado (entrada → salida o ahora)
+  const entradaMark = todayMarks.find((m) => m.tipo === 'entrada');
+  const salidaMark = todayMarks.find((m) => m.tipo === 'salida');
+  const workedMs = (() => {
+    if (!entradaMark) return 0;
+    const start = new Date(entradaMark.created_at).getTime();
+    const end = salidaMark ? new Date(salidaMark.created_at).getTime() : now.getTime();
+    return Math.max(0, end - start);
+  })();
+  const workedFmt = (() => {
+    const totalSec = Math.floor(workedMs / 1000);
+    const h = Math.floor(totalSec / 3600);
+    const m = Math.floor((totalSec % 3600) / 60);
+    const s = totalSec % 60;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  })();
 
   useClockInReminder({ userId: user?.id, hasEntrada, hasSalida });
 
@@ -105,6 +122,20 @@ export default function StaffHome() {
           <StatusChip tipo="entrada" mark={todayMarks.find((m) => m.tipo === 'entrada')} cfg={cfg} />
           <StatusChip tipo="salida" mark={todayMarks.find((m) => m.tipo === 'salida')} cfg={cfg} />
         </div>
+
+        {entradaMark && (
+          <div className="mt-4 rounded-xl border border-gold/30 bg-gradient-to-r from-gold/5 via-gold/10 to-gold/5 p-4 fade-up" data-testid="worked-timer">
+            <div className="flex items-center justify-between mb-1">
+              <p className="label-eyebrow text-gold">{salidaMark ? 'Tiempo trabajado' : 'Cronómetro activo'}</p>
+              {!salidaMark && <span className="flex items-center gap-1.5 text-[10px] text-green-400 font-bold uppercase tracking-wider"><span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" /> En curso</span>}
+              {salidaMark && <span className="text-[10px] text-blue-400 font-bold uppercase tracking-wider">Jornada cerrada</span>}
+            </div>
+            <p className="text-4xl md:text-5xl font-black tracking-tighter gold-gradient-text font-mono">{workedFmt}</p>
+            <p className="text-[11px] text-zinc-500 mt-1">
+              Desde {entradaMark.hora?.slice(0, 5)}{salidaMark ? ` hasta ${salidaMark.hora?.slice(0, 5)}` : ''}
+            </p>
+          </div>
+        )}
       </div>
 
       {/* PENDIENTES rápidos */}

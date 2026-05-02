@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Users, ClipboardList, Settings, LogOut, Bell, CheckSquare } from 'lucide-react';
+import { LayoutDashboard, Users, ClipboardList, Settings, LogOut, Bell, CheckSquare, FileText } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import Logo from '../Logo';
 import NotificationsBell from '../NotificationsBell';
@@ -9,6 +9,7 @@ const nav = [
   { to: '/admin/personal', icon: Users, label: 'Personal' },
   { to: '/admin/tareas', icon: ClipboardList, label: 'Tareas' },
   { to: '/admin/pendientes', icon: CheckSquare, label: 'Pendientes' },
+  { to: '/admin/reportes', icon: FileText, label: 'Reportes' },
   { to: '/admin/config', icon: Settings, label: 'Config' },
 ];
 
@@ -70,7 +71,7 @@ export default function AdminLayout() {
 
       {/* MOBILE bottom nav */}
       <nav className="md:hidden fixed bottom-0 inset-x-0 z-30 glass border-t border-white/5 safe-pb">
-        <div className="grid grid-cols-6 gap-1 px-2 py-2">
+        <div className="grid grid-cols-7 gap-1 px-2 py-2">
           {nav.map((n) => (
             <NavLink key={n.to} to={n.to} end={n.end}
               className={({ isActive }) =>

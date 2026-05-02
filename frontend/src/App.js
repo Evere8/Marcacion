@@ -11,6 +11,7 @@ import AdminPersonal from './pages/admin/Personal';
 import AdminTasks from './pages/admin/Tasks';
 import AdminTaskDetail from './pages/admin/TaskDetail';
 import AdminChecklist from './pages/admin/Checklist';
+import AdminReports from './pages/admin/Reports';
 import AdminConfig from './pages/admin/Config';
 import StaffHome from './pages/staff/Home';
 import StaffClockIn from './pages/staff/ClockIn';
@@ -85,6 +86,7 @@ export default function App() {
               <Route path="tareas" element={<AdminTasks />} />
               <Route path="tareas/:id" element={<AdminTaskDetail />} />
               <Route path="pendientes" element={<AdminChecklist />} />
+              <Route path="reportes" element={<AdminReports />} />
               <Route path="config" element={<AdminConfig />} />
             </Route>
             <Route path="/app" element={<RoleGate role="personal"><StaffLayout /></RoleGate>}>

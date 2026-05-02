@@ -4,8 +4,9 @@ import { useRealtime } from '../../hooks/useRealtime';
 import { useAuth } from '../../contexts/AuthContext';
 import { formatTime, formatDateEs, todayISO, paraguayNow, computeMarkDelay } from '../../lib/format';
 import { mapsUrl, getHighAccuracyPosition, reverseGeocode } from '../../lib/gps';
-import { Trash2, MapPin, Loader2, Crosshair } from 'lucide-react';
+import { Trash2, MapPin, Loader2, Crosshair, Camera, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { uploadMarkPhoto, deleteMarkPhoto } from '../../lib/upload';
 
 export default function History() {
   const { user } = useAuth();
@@ -15,6 +16,8 @@ export default function History() {
   const loadedOnce = useRef(false);
 
   const [editingId, setEditingId] = useState(null);
+  const [photoBusyId, setPhotoBusyId] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState(null);
   const [cfg, setCfg] = useState(null);
 
   useEffect(() => {
@@ -71,6 +74,37 @@ export default function History() {
       if (error) throw error;
       toast.success('Eliminada');
     } catch (e) { toast.error(e.message); refresh(true); }
+  }
+
+  async function uploadPhoto(r, file) {
+    if (!file) return;
+    setPhotoBusyId(r.id);
+    try {
+      // Delete previous if any
+      if (r.foto_url) await deleteMarkPhoto(r.foto_url);
+      const { url } = await uploadMarkPhoto(user.id, r.id, file);
+      const { error } = await supabase.from('marks').update({ foto_url: url }).eq('id', r.id);
+      if (error) throw error;
+      toast.success('Foto cargada');
+      refresh(true);
+    } catch (e) {
+      toast.error(e.message || 'No se pudo subir la foto');
+    } finally {
+      setPhotoBusyId(null);
+    }
+  }
+
+  async function removePhoto(r) {
+    if (!r.foto_url) return;
+    if (!window.confirm('Quitar la foto de esta marcación?')) return;
+    setPhotoBusyId(r.id);
+    try {
+      await deleteMarkPhoto(r.foto_url);
+      await supabase.from('marks').update({ foto_url: null }).eq('id', r.id);
+      toast.success('Foto eliminada');
+      refresh(true);
+    } catch (e) { toast.error(e.message); }
+    finally { setPhotoBusyId(null); }
   }
 
   async function editLocation(r) {
@@ -145,8 +179,47 @@ export default function History() {
                     <MapPin className="w-4 h-4" />
                   </a>
                 )}
+                {r.foto_url && (
+                  <button
+                    onClick={() => setPreviewUrl(r.foto_url)}
+                    className="shrink-0 w-9 h-9 rounded-xl overflow-hidden border border-gold/30"
+                    title="Ver foto"
+                    data-testid={`history-photo-thumb-${r.id}`}
+                  >
+                    <img src={r.foto_url} alt="" className="w-full h-full object-cover" />
+                  </button>
+                )}
                 {today && (
                   <div className="flex gap-1">
+                    <label
+                      className="p-2 rounded-lg hover:bg-gold/10 cursor-pointer"
+                      data-testid={`history-photo-upload-${r.id}`}
+                      title={r.foto_url ? 'Reemplazar foto' : 'Subir foto'}
+                    >
+                      {photoBusyId === r.id ? <Loader2 className="w-3.5 h-3.5 animate-spin text-gold" /> : <Camera className="w-3.5 h-3.5 text-gold" />}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        className="hidden"
+                        disabled={photoBusyId === r.id}
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) uploadPhoto(r, f);
+                          e.target.value = '';
+                        }}
+                      />
+                    </label>
+                    {r.foto_url && (
+                      <button
+                        onClick={() => removePhoto(r)}
+                        className="p-2 rounded-lg hover:bg-red-500/10"
+                        data-testid={`history-photo-remove-${r.id}`}
+                        title="Quitar foto"
+                      >
+                        <X className="w-3.5 h-3.5 text-red-400" />
+                      </button>
+                    )}
                     <button
                       onClick={() => editLocation(r)}
                       disabled={editingId === r.id}
@@ -164,6 +237,16 @@ export default function History() {
           );
         })}
       </div>
+
+      {previewUrl && (
+        <div
+          className="fixed inset-0 z-50 bg-black/90 grid place-items-center p-4 cursor-zoom-out"
+          onClick={() => setPreviewUrl(null)}
+          data-testid="history-photo-preview"
+        >
+          <img src={previewUrl} alt="" className="max-w-full max-h-full rounded-2xl shadow-2xl" />
+        </div>
+      )}
     </div>
   );
 }
