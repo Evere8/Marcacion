@@ -7,7 +7,7 @@ import { MapContainer, TileLayer, Marker, Popup, CircleMarker } from 'react-leaf
 import L from 'leaflet';
 import { Clock, AlertTriangle, MapPin, UserX, ClipboardList, BellRing, LogIn as InIcon, LogOut as OutIcon, Activity, ExternalLink, CheckSquare, Plus, Repeat } from 'lucide-react';
 import { Badge } from '../../components/ui/badge';
-import { formatTime, minutesToText, todayISO } from '../../lib/format';
+import { formatTime, minutesToText, todayISO, computeMarkDelay } from '../../lib/format';
 import { sendNotification, sendNotificationBulk, requestNotificationPermission } from '../../hooks/useNotifications';
 import { mapsUrl } from '../../lib/gps';
 import { toast } from 'sonner';
@@ -213,11 +213,14 @@ export default function Dashboard() {
                     <p className="text-[11px] text-zinc-500 truncate">{formatTime(m.hora)} · {m.direccion_geolocalizada || 'Ubicación'}</p>
                   </div>
                 </button>
-                {m.retraso_minutos > 0 ? (
-                  <Badge className="bg-yellow-500/15 text-yellow-400 border border-yellow-500/30 uppercase text-[10px]">+{minutesToText(m.retraso_minutos)}</Badge>
-                ) : (
-                  <Badge className="bg-green-500/15 text-green-400 border border-green-500/30 uppercase text-[10px]">A tiempo</Badge>
-                )}
+                {(() => {
+                  const delay = computeMarkDelay(m, cfg);
+                  return delay > 0 ? (
+                    <Badge className="bg-yellow-500/15 text-yellow-400 border border-yellow-500/30 uppercase text-[10px]">+{minutesToText(delay)}</Badge>
+                  ) : (
+                    <Badge className="bg-green-500/15 text-green-400 border border-green-500/30 uppercase text-[10px]">A tiempo</Badge>
+                  );
+                })()}
                 {m.latitud != null && (
                   <a
                     href={mapsUrl(m.latitud, m.longitud)}
@@ -264,58 +267,50 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* REPORTE DEL DÍA · horarios */}
-        <div className="card-premium p-5 fade-up" data-testid="daily-schedule-report">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <p className="label-eyebrow">Desempeño del día</p>
-              <h2 className="text-lg font-black">Reporte de horarios</h2>
-              <p className="text-[11px] text-zinc-500 mt-0.5">Entrada {cfg.hora_entrada} · Salida {cfg.hora_salida} · Tolerancia {cfg.tolerancia_minutos}m</p>
-            </div>
-            <Clock className="w-4 h-4 text-yellow-400" />
-          </div>
-          <div className="grid grid-cols-4 gap-2 mb-4 text-center">
-            <div className="rounded-lg bg-green-500/10 border border-green-500/20 p-2">
-              <p className="text-[10px] text-zinc-400 uppercase tracking-wider">A tiempo</p>
-              <p className="text-xl font-black text-green-400">{reportSummary.aTiempo}</p>
-            </div>
-            <div className="rounded-lg bg-yellow-500/10 border border-yellow-500/20 p-2">
-              <p className="text-[10px] text-zinc-400 uppercase tracking-wider">Tarde</p>
-              <p className="text-xl font-black text-yellow-400">{reportSummary.tarde}</p>
-            </div>
-            <div className="rounded-lg bg-red-500/10 border border-red-500/20 p-2">
-              <p className="text-[10px] text-zinc-400 uppercase tracking-wider">Sin marcar</p>
-              <p className="text-xl font-black text-red-400">{reportSummary.sinMarcar}</p>
-            </div>
-            <div className="rounded-lg bg-blue-500/10 border border-blue-500/20 p-2">
-              <p className="text-[10px] text-zinc-400 uppercase tracking-wider">Salieron</p>
-              <p className="text-xl font-black text-blue-400">{reportSummary.completaron}</p>
-            </div>
-          </div>
-          <div className="space-y-2 max-h-[280px] overflow-auto">
-            {dailyReport.length === 0 && <p className="text-zinc-500 text-sm py-4 text-center">Sin personal activo.</p>}
-            {dailyReport.map((u) => <ScheduleRow key={u.id} u={u} />)}
-          </div>
-        </div>
-
         {/* TAREAS URGENTES */}
-        <div className="card-premium p-5 fade-up" data-testid="urgent-tasks">
+        <div className="card-premium p-5 fade-up lg:col-span-2" data-testid="urgent-tasks">
           <div className="flex items-center justify-between mb-4">
             <div><p className="label-eyebrow">Prioridad</p><h2 className="text-lg font-black">Tareas urgentes</h2></div>
             <AlertTriangle className="w-4 h-4 text-red-400" />
           </div>
           <div className="space-y-2 max-h-[280px] overflow-auto">
             {tasks.filter(t => t.estado !== 'completada').slice(0, 10).map((t) => (
-              <div key={t.id} className="p-3 rounded-xl hover:bg-white/5">
-                <div className="flex items-center gap-2">
-                  <UrgencyDot u={t.urgencia} />
-                  <p className="text-sm font-bold text-white truncate flex-1">{t.titulo}</p>
+              <div key={t.id} className="p-3 rounded-xl hover:bg-white/5 flex items-center gap-3">
+                <UrgencyDot u={t.urgencia} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold text-white truncate">{t.titulo}</p>
+                  <p className="text-[11px] text-zinc-500 truncate">→ {t.assignee?.nombre || '—'} · {t.estado}</p>
                 </div>
-                <p className="text-[11px] text-zinc-500 mt-1 truncate">→ {t.assignee?.nombre || '—'}</p>
               </div>
             ))}
             {tasks.length === 0 && <p className="text-zinc-500 text-sm py-4 text-center">Sin tareas activas.</p>}
           </div>
+        </div>
+      </div>
+
+      {/* REPORTE DEL DÍA · horarios — full width with detailed cards */}
+      <div className="card-premium p-6 fade-up" data-testid="daily-schedule-report">
+        <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
+          <div>
+            <p className="label-eyebrow">Desempeño del día</p>
+            <h2 className="text-2xl font-black tracking-tight">Reporte de horarios</h2>
+            <p className="text-xs text-zinc-500 mt-1">
+              Jornada configurada · Entrada <span className="text-white font-bold">{cfg.hora_entrada}</span> · Salida <span className="text-white font-bold">{cfg.hora_salida}</span> · Tolerancia <span className="text-white font-bold">{cfg.tolerancia_minutos} min</span>
+            </p>
+          </div>
+          <Clock className="w-5 h-5 text-yellow-400" />
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+          <SummaryStat label="A tiempo" value={reportSummary.aTiempo} color="green" />
+          <SummaryStat label="Tarde" value={reportSummary.tarde} color="yellow" />
+          <SummaryStat label="Sin marcar" value={reportSummary.sinMarcar} color="red" />
+          <SummaryStat label="Salieron" value={reportSummary.completaron} color="blue" />
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          {dailyReport.length === 0 && <p className="text-zinc-500 text-sm py-4 text-center col-span-full">Sin personal activo.</p>}
+          {dailyReport.map((u) => <ScheduleCard key={u.id} u={u} cfg={cfg} />)}
         </div>
       </div>
 
@@ -363,7 +358,22 @@ export default function Dashboard() {
   );
 }
 
-function ScheduleRow({ u }) {
+function SummaryStat({ label, value, color }) {
+  const map = {
+    green: 'bg-green-500/10 border-green-500/30 text-green-400',
+    yellow: 'bg-yellow-500/10 border-yellow-500/30 text-yellow-400',
+    red: 'bg-red-500/10 border-red-500/30 text-red-400',
+    blue: 'bg-blue-500/10 border-blue-500/30 text-blue-400',
+  };
+  return (
+    <div className={`rounded-xl border p-4 text-center ${map[color]}`}>
+      <p className="text-[10px] text-zinc-400 uppercase tracking-wider">{label}</p>
+      <p className="text-3xl md:text-4xl font-black">{value}</p>
+    </div>
+  );
+}
+
+function ScheduleCard({ u, cfg }) {
   const eMap = {
     a_tiempo: { c: 'bg-green-500/15 text-green-300 border-green-500/30', t: 'A tiempo' },
     tarde: { c: 'bg-red-500/15 text-red-300 border-red-500/30', t: 'Tarde' },
@@ -371,26 +381,46 @@ function ScheduleRow({ u }) {
     pendiente: { c: 'bg-zinc-500/15 text-zinc-400 border-zinc-500/30', t: 'No marcó' },
   };
   const sMap = {
-    a_tiempo: { c: 'bg-blue-500/15 text-blue-300 border-blue-500/30', t: 'OK' },
-    temprano: { c: 'bg-yellow-500/15 text-yellow-300 border-yellow-500/30', t: 'Temprano' },
-    pendiente: { c: 'bg-zinc-500/10 text-zinc-500 border-zinc-500/20', t: '—' },
+    a_tiempo: { c: 'bg-blue-500/15 text-blue-300 border-blue-500/30', t: 'A tiempo' },
+    temprano: { c: 'bg-yellow-500/15 text-yellow-300 border-yellow-500/30', t: 'Antes de hora' },
+    pendiente: { c: 'bg-zinc-500/10 text-zinc-500 border-zinc-500/20', t: 'No salió' },
   };
   const e = eMap[u.entradaStatus];
   const s = sMap[u.salidaStatus];
+  const accent =
+    u.entradaStatus === 'tarde' ? 'border-red-500/30' :
+    u.entradaStatus === 'pendiente' ? 'border-zinc-500/20' :
+    'border-green-500/20';
   return (
-    <div className="flex items-center gap-3 p-2 rounded-xl hover:bg-white/5" data-testid={`schedule-row-${u.id}`}>
-      <Avatar src={u.foto_perfil} name={u.nombre} size={28} />
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-bold text-white truncate">{u.nombre}</p>
-        <p className="text-[10px] text-zinc-500">
-          {u.entrada ? `E ${u.entrada.hora?.slice(0, 5)}` : 'E —'}
-          {' · '}
-          {u.salida ? `S ${u.salida.hora?.slice(0, 5)}` : 'S —'}
-          {u.entradaDelta !== null && u.entradaStatus === 'tarde' && <span className="text-red-400 font-bold"> · +{u.entradaDelta}m</span>}
-        </p>
+    <div className={`rounded-xl border ${accent} bg-white/[0.02] p-4 hover:bg-white/[0.04] transition-colors`} data-testid={`schedule-row-${u.id}`}>
+      <div className="flex items-center gap-3 mb-3">
+        <Avatar src={u.foto_perfil} name={u.nombre} size={40} />
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-black text-white truncate">{u.nombre}</p>
+          <p className="text-[10px] text-zinc-500 uppercase tracking-wider">Personal</p>
+        </div>
       </div>
-      <span className={`px-2 py-0.5 rounded-md border text-[10px] font-bold uppercase tracking-wider ${e.c}`}>{e.t}</span>
-      <span className={`px-2 py-0.5 rounded-md border text-[10px] font-bold uppercase tracking-wider ${s.c}`}>{s.t}</span>
+      <div className="grid grid-cols-2 gap-2">
+        <div className="rounded-lg bg-black/30 p-2.5">
+          <div className="flex items-center justify-between">
+            <p className="text-[10px] uppercase tracking-wider text-zinc-500">Entrada</p>
+            <span className={`px-1.5 py-0.5 rounded-md border text-[9px] font-bold uppercase ${e.c}`}>{e.t}</span>
+          </div>
+          <p className="text-lg font-black text-white mt-1">{u.entrada ? u.entrada.hora?.slice(0, 5) : '—:—'}</p>
+          <p className="text-[10px] text-zinc-500">Esperada {cfg.hora_entrada}</p>
+          {u.entradaStatus === 'tarde' && <p className="text-[10px] text-red-400 font-bold mt-0.5">+{u.entradaDelta} min tarde</p>}
+          {u.entradaStatus === 'temprano' && u.entradaDelta !== null && <p className="text-[10px] text-emerald-400 font-bold mt-0.5">{u.entradaDelta < 0 ? `${-u.entradaDelta} min antes` : 'En punto'}</p>}
+        </div>
+        <div className="rounded-lg bg-black/30 p-2.5">
+          <div className="flex items-center justify-between">
+            <p className="text-[10px] uppercase tracking-wider text-zinc-500">Salida</p>
+            <span className={`px-1.5 py-0.5 rounded-md border text-[9px] font-bold uppercase ${s.c}`}>{s.t}</span>
+          </div>
+          <p className="text-lg font-black text-white mt-1">{u.salida ? u.salida.hora?.slice(0, 5) : '—:—'}</p>
+          <p className="text-[10px] text-zinc-500">Esperada {cfg.hora_salida}</p>
+          {u.salidaStatus === 'temprano' && u.salidaDelta !== null && <p className="text-[10px] text-yellow-400 font-bold mt-0.5">{-u.salidaDelta} min antes</p>}
+        </div>
+      </div>
     </div>
   );
 }

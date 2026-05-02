@@ -4,7 +4,7 @@ import { supabase } from '../../lib/supabase';
 import { useRealtime } from '../../hooks/useRealtime';
 import { useAuth } from '../../contexts/AuthContext';
 import { MapPin, ClipboardList, LogIn as InIcon, LogOut as OutIcon, AlertTriangle, ChevronRight, CheckSquare, Plus, Repeat } from 'lucide-react';
-import { formatTime, todayISO } from '../../lib/format';
+import { formatTime, todayISO, computeMarkDelay } from '../../lib/format';
 import { mapsUrl } from '../../lib/gps';
 import { requestNotificationPermission } from '../../hooks/useNotifications';
 import { useClockInReminder } from '../../hooks/useClockInReminder';
@@ -102,8 +102,8 @@ export default function StaffHome() {
         </div>
 
         <div className="mt-6 grid grid-cols-2 gap-3">
-          <StatusChip tipo="entrada" mark={todayMarks.find((m) => m.tipo === 'entrada')} />
-          <StatusChip tipo="salida" mark={todayMarks.find((m) => m.tipo === 'salida')} />
+          <StatusChip tipo="entrada" mark={todayMarks.find((m) => m.tipo === 'entrada')} cfg={cfg} />
+          <StatusChip tipo="salida" mark={todayMarks.find((m) => m.tipo === 'salida')} cfg={cfg} />
         </div>
       </div>
 
@@ -174,9 +174,10 @@ export default function StaffHome() {
   );
 }
 
-function StatusChip({ tipo, mark }) {
+function StatusChip({ tipo, mark, cfg }) {
   const marked = !!mark;
   const fake = mark?.fake_gps_detected;
+  const delay = marked ? computeMarkDelay(mark, cfg) : 0;
   const bg = marked ? (tipo === 'entrada' ? 'bg-green-500/10 border-green-500/30' : 'bg-blue-500/10 border-blue-500/30') : 'bg-white/5 border-white/10';
   const tx = marked ? (tipo === 'entrada' ? 'text-green-400' : 'text-blue-400') : 'text-zinc-500';
   return (
@@ -184,7 +185,8 @@ function StatusChip({ tipo, mark }) {
       <p className="label-eyebrow">{tipo === 'entrada' ? 'Entrada' : 'Salida'}</p>
       <p className={`text-lg font-black ${tx}`}>{marked ? formatTime(mark.hora) : '—:—'}</p>
       {fake && <p className="text-[10px] text-red-400 font-bold flex items-center gap-1 mt-1"><AlertTriangle className="w-3 h-3" /> GPS sospechoso</p>}
-      {marked && mark.retraso_minutos > 0 && !fake && <p className="text-[10px] text-yellow-400 font-bold mt-1">+{mark.retraso_minutos} min</p>}
+      {marked && delay > 0 && !fake && <p className="text-[10px] text-yellow-400 font-bold mt-1">+{delay} min tarde</p>}
+      {marked && delay === 0 && !fake && <p className="text-[10px] text-green-400 font-bold mt-1">A tiempo</p>}
       {marked && mark.latitud != null && (
         <a
           href={mapsUrl(mark.latitud, mark.longitud)}

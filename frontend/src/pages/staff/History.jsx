@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useRealtime } from '../../hooks/useRealtime';
 import { useAuth } from '../../contexts/AuthContext';
-import { formatTime, formatDateEs, todayISO, paraguayNow } from '../../lib/format';
+import { formatTime, formatDateEs, todayISO, paraguayNow, computeMarkDelay } from '../../lib/format';
 import { mapsUrl, getHighAccuracyPosition, reverseGeocode } from '../../lib/gps';
 import { Trash2, MapPin, Loader2, Crosshair } from 'lucide-react';
 import { toast } from 'sonner';
@@ -15,6 +15,12 @@ export default function History() {
   const loadedOnce = useRef(false);
 
   const [editingId, setEditingId] = useState(null);
+  const [cfg, setCfg] = useState(null);
+
+  useEffect(() => {
+    supabase.from('attendance_config').select('*').limit(1).maybeSingle()
+      .then(({ data }) => setCfg(data || null));
+  }, []);
 
   async function refresh(silent = false) {
     if (!user) return;
@@ -127,7 +133,10 @@ export default function History() {
                   <p className="font-bold">{formatDateEs(r.fecha)} · {formatTime(r.hora)}</p>
                   <p className="text-xs text-zinc-500 truncate">{r.direccion_geolocalizada || (r.latitud != null ? `${r.latitud?.toFixed(4)}, ${r.longitud?.toFixed(4)}` : '—')}</p>
                 </div>
-                {r.retraso_minutos > 0 && <span className="px-2 py-1 rounded-full bg-yellow-500/15 text-yellow-400 text-[10px] font-bold uppercase">+{r.retraso_minutos}m</span>}
+                {(() => {
+                  const delay = computeMarkDelay(r, cfg);
+                  return delay > 0 && <span className="px-2 py-1 rounded-full bg-yellow-500/15 text-yellow-400 text-[10px] font-bold uppercase">+{delay}m</span>;
+                })()}
                 {r.latitud != null && (
                   <a href={mapsUrl(r.latitud, r.longitud)} target="_blank" rel="noreferrer"
                     className="shrink-0 w-9 h-9 rounded-xl grid place-items-center bg-gold/10 text-gold hover:bg-gold/20 border border-gold/30 transition-colors"

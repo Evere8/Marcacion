@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { toast } from 'sonner';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { useRealtime } from './useRealtime';
@@ -30,8 +31,13 @@ export function useNotifications() {
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` },
         (payload) => {
-          setItems((prev) => [payload.new, ...prev]);
-          showBrowserNotification(payload.new);
+          const n = payload.new;
+          setItems((prev) => [n, ...prev]);
+          // In-app toast — visible regardless of notification permissions.
+          showInAppToast(n);
+          // Best-effort OS-level notification (works on desktop / Android even
+          // in foreground, and on iOS only when permission is granted).
+          showBrowserNotification(n);
         }
       );
     },
@@ -51,6 +57,31 @@ export function useNotifications() {
   return { items, unread, markRead, markAllRead };
 }
 
+function iconFor(tipo) {
+  switch (tipo) {
+    case 'tarea': return '📋';
+    case 'chat': return '💬';
+    case 'marcacion': return '⏱️';
+    case 'alerta': return '⚠️';
+    default: return '🔔';
+  }
+}
+
+export function showInAppToast(n) {
+  if (!n) return;
+  const title = `${iconFor(n.tipo)} ${n.titulo || 'ALFATWIN'}`;
+  toast(title, {
+    description: n.mensaje || '',
+    duration: 6000,
+    action: n.link ? {
+      label: 'Abrir',
+      onClick: () => {
+        try { window.location.assign(n.link); } catch {}
+      },
+    } : undefined,
+  });
+}
+
 export function showBrowserNotification(n) {
   if (!('Notification' in window)) return;
   if (Notification.permission !== 'granted') return;
@@ -62,7 +93,7 @@ export function showBrowserNotification(n) {
           icon: '/icons/icon-192.png',
           badge: '/icons/icon-192.png',
           tag: n.id,
-          data: { link: n.link },
+          data: { link: n.link, url: n.link },
         })
       );
     } else {
