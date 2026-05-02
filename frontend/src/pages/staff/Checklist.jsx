@@ -4,14 +4,16 @@ import { useRealtime } from '../../hooks/useRealtime';
 import { useAuth } from '../../contexts/AuthContext';
 import { Input } from '../../components/ui/input';
 import { Checkbox } from '../../components/ui/checkbox';
-import { Plus, Trash2, Repeat, CheckSquare, Loader2 } from 'lucide-react';
-import { todayISO, formatDateEs } from '../../lib/format';
+import { Plus, Trash2, Repeat, CheckSquare, Loader2, Clock } from 'lucide-react';
+import { todayISO, formatDateEs, formatTime, paraguayTimeHHMM } from '../../lib/format';
+import { autoGenerateRepeatablesByHour } from '../../lib/checklistAuto';
 import { toast } from 'sonner';
 
 export default function Checklist() {
   const { user } = useAuth();
   const [items, setItems] = useState([]);
   const [text, setText] = useState('');
+  const [hora, setHora] = useState('');
   const [repetible, setRepetible] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -27,11 +29,12 @@ export default function Checklist() {
         .select('*')
         .eq('user_id', user.id)
         .order('fecha', { ascending: false })
+        .order('hora', { ascending: true, nullsFirst: false })
         .order('created_at');
       if (error) throw error;
       setItems(data || []);
       loadedOnce.current = true;
-      autoGenerateRepeatables(data || []).catch(() => {});
+      autoGenerateRepeatablesByHour(user.id, data || []).catch(() => {});
     } catch (e) {
       if (!silent) toast.error(e.message || 'No se pudo cargar');
     } finally {
@@ -40,20 +43,13 @@ export default function Checklist() {
     }
   }
 
-  async function autoGenerateRepeatables(current) {
-    const today = todayISO();
-    const repetibles = [...new Set(current.filter((i) => i.repetible).map((i) => i.titulo))];
-    const todayTitles = new Set(current.filter((i) => i.fecha === today).map((i) => i.titulo));
-    const missing = repetibles.filter((t) => !todayTitles.has(t));
-    if (missing.length === 0) return;
-    await supabase.from('checklists').insert(
-      missing.map((titulo) => ({ user_id: user.id, titulo, repetible: true, fecha: today }))
-    );
-  }
-
   useEffect(() => {
     if (!user) return;
     refresh(false);
+    // Re-check every minute so hora-triggered repetibles auto-renew while
+    // the app is open.
+    const tick = setInterval(() => refresh(true), 60_000);
+    return () => clearInterval(tick);
     // eslint-disable-next-line
   }, [user?.id]);
 
@@ -69,12 +65,19 @@ export default function Checklist() {
     try {
       const { data, error } = await supabase
         .from('checklists')
-        .insert({ user_id: user.id, titulo: text.trim(), repetible, fecha: todayISO() })
+        .insert({
+          user_id: user.id,
+          titulo: text.trim(),
+          repetible,
+          hora: hora || null,
+          fecha: todayISO(),
+        })
         .select()
         .single();
       if (error) throw error;
       setItems((prev) => [data, ...prev]);
       setText('');
+      setHora('');
       setRepetible(false);
       toast.success('Añadido');
     } catch (e) {
@@ -85,13 +88,12 @@ export default function Checklist() {
   }
 
   async function toggle(i) {
-    // Optimistic UI
     setItems((prev) => prev.map((x) => (x.id === i.id ? { ...x, completado: !i.completado } : x)));
     try {
       const { error } = await supabase.from('checklists').update({ completado: !i.completado }).eq('id', i.id);
       if (error) throw error;
     } catch (e) {
-      setItems((prev) => prev.map((x) => (x.id === i.id ? i : x))); // revert
+      setItems((prev) => prev.map((x) => (x.id === i.id ? i : x)));
       toast.error(e.message);
     }
   }
@@ -108,6 +110,21 @@ export default function Checklist() {
       setItems((prev) => prev.map((x) => (x.id === i.id ? i : x)));
       toast.error(e.message);
     }
+  }
+
+  async function editHora(i) {
+    const nuevo = window.prompt('Hora (HH:MM, vacío para quitar)', i.hora ? i.hora.slice(0, 5) : '');
+    if (nuevo == null) return;
+    const trimmed = nuevo.trim();
+    const newHora = trimmed === '' ? null : (/^\d{1,2}:\d{2}$/.test(trimmed) ? trimmed : null);
+    if (trimmed && !newHora) { toast.error('Formato HH:MM (ej. 08:30)'); return; }
+    const prev = i.hora;
+    setItems((p) => p.map((x) => (x.id === i.id ? { ...x, hora: newHora } : x)));
+    const { error } = await supabase.from('checklists').update({ hora: newHora }).eq('id', i.id);
+    if (error) {
+      setItems((p) => p.map((x) => (x.id === i.id ? { ...x, hora: prev } : x)));
+      toast.error(error.message);
+    } else { toast.success('Hora actualizada'); }
   }
 
   async function del(i) {
@@ -127,20 +144,32 @@ export default function Checklist() {
     t.setDate(t.getDate() + 1);
     const tomorrow = t.toLocaleDateString('en-CA');
     const { error } = await supabase.from('checklists').insert({
-      user_id: user.id, titulo: i.titulo, repetible: i.repetible, fecha: tomorrow,
+      user_id: user.id, titulo: i.titulo, repetible: i.repetible, hora: i.hora || null, fecha: tomorrow,
     });
     if (error) toast.error(error.message);
     else { toast.success(`Renovado para mañana: ${i.titulo}`); refresh(true); }
   }
 
   const groups = items.reduce((acc, it) => { (acc[it.fecha] ||= []).push(it); return acc; }, {});
+  const pyTime = paraguayTimeHHMM();
 
   return (
     <div className="space-y-5" data-testid="staff-checklist-page">
       <form onSubmit={(e) => { e.preventDefault(); add(); }} className="card-premium p-4 flex gap-2 flex-wrap">
         <Input value={text} onChange={(e) => setText(e.target.value)} placeholder="Nuevo pendiente…"
-          className="flex-1 bg-panel border-white/10 rounded-xl h-11" data-testid="checklist-input" />
-        <label className="flex items-center gap-2 text-xs text-zinc-400">
+          className="flex-1 min-w-[160px] bg-panel border-white/10 rounded-xl h-11" data-testid="checklist-input" />
+        <div className="flex items-center gap-1 rounded-xl bg-panel border border-white/10 px-2 h-11" title="Hora opcional">
+          <Clock className="w-3.5 h-3.5 text-zinc-500" />
+          <Input
+            type="time"
+            value={hora}
+            onChange={(e) => setHora(e.target.value)}
+            className="w-[110px] bg-transparent border-0 h-9 px-1 text-sm focus-visible:ring-0"
+            data-testid="checklist-hora-input"
+            aria-label="Hora del pendiente"
+          />
+        </div>
+        <label className="flex items-center gap-2 text-xs text-zinc-400 px-2">
           <Checkbox checked={repetible} onCheckedChange={(v) => setRepetible(!!v)} data-testid="checklist-repetible" />
           <Repeat className="w-3.5 h-3.5" /> Diario
         </label>
@@ -163,7 +192,7 @@ export default function Checklist() {
 
       {Object.entries(groups).map(([fecha, list]) => (
         <section key={fecha}>
-          <p className="label-eyebrow mb-2">{fecha === todayISO() ? 'Hoy' : formatDateEs(fecha)}</p>
+          <p className="label-eyebrow mb-2">{fecha === todayISO() ? `Hoy · ${pyTime} PY` : formatDateEs(fecha)}</p>
           <div className="space-y-2">
             {list.map((i) => (
               <div key={i.id}
@@ -187,6 +216,17 @@ export default function Checklist() {
                   data-testid={`checklist-edit-${i.id}`}
                 >
                   {i.titulo}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => editHora(i)}
+                  className={`shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-bold tracking-wider border ${
+                    i.hora ? 'bg-gold/15 text-gold border-gold/30' : 'bg-white/5 text-zinc-500 border-white/10 hover:text-white'
+                  }`}
+                  data-testid={`checklist-hora-${i.id}`}
+                  title="Asignar / editar hora"
+                >
+                  <Clock className="w-3 h-3" />{i.hora ? formatTime(i.hora) : 'Hora'}
                 </button>
                 {i.repetible && <Repeat className="w-3.5 h-3.5 text-gold shrink-0" />}
                 <button

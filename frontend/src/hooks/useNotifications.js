@@ -111,10 +111,41 @@ export async function requestNotificationPermission() {
 }
 
 export async function sendNotification(user_id, { tipo, titulo, mensaje, link }) {
-  return supabase.from('notifications').insert({ user_id, tipo, titulo, mensaje, link });
+  if (!user_id) {
+    console.warn('[notif] sendNotification: missing user_id', { tipo, titulo });
+    return { error: new Error('user_id requerido') };
+  }
+  const { error } = await supabase.from('notifications').insert({ user_id, tipo, titulo, mensaje, link });
+  if (error) {
+    console.error('[notif] insert failed:', error.message, { user_id, tipo, titulo });
+  }
+  return { error };
 }
 
 export async function sendNotificationBulk(user_ids, payload) {
-  const rows = user_ids.map((uid) => ({ user_id: uid, ...payload }));
-  return supabase.from('notifications').insert(rows);
+  const ids = (user_ids || []).filter(Boolean);
+  if (!ids.length) {
+    console.warn('[notif] sendNotificationBulk: no user_ids', payload);
+    return { error: null };
+  }
+  const rows = ids.map((uid) => ({ user_id: uid, ...payload }));
+  const { error } = await supabase.from('notifications').insert(rows);
+  if (error) {
+    console.error('[notif] bulk insert failed:', error.message, { count: ids.length, payload });
+  }
+  return { error };
+}
+
+// Helper: notify all active admins (used by staff actions like clock-in, task progress, fake GPS...).
+export async function notifyAllAdmins(payload) {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id')
+    .eq('rol', 'admin')
+    .eq('activo', true);
+  if (error) {
+    console.error('[notif] could not load admins:', error.message);
+    return { error };
+  }
+  return sendNotificationBulk((data || []).map((a) => a.id), payload);
 }

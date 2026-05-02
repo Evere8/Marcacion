@@ -3,6 +3,13 @@
 ## Original problem statement
 Sistema profesional de marcación de personal (PWA + Supabase + Vercel) con marcación de entrada/salida en tiempo real, gestión de tareas con chat, ubicación GPS verificada (anti fake GPS), notificaciones push, panel administrativo completo. Dos roles: Administrador y Personal. Logo ALFATWIN (negro + dorado + plateado), tipografía Montserrat, diseño minimalista premium 2026.
 
+## What's been implemented (2026-05-02 v2 — Notificaciones robustas + hora en pendientes)
+- ✅ **Helper `notifyAllAdmins()`** en `hooks/useNotifications.js` — usado por ClockIn para notificar a todos los admins activos sin duplicar lookups. Incluye `console.error` cuando un insert falla, para detectar problemas RLS rápido.
+- ✅ **Notificaciones existentes verificadas y robustecidas**: marcación entrada/salida → admins · chat de tarea → contraparte · cambio de estado por staff (en_progreso/completada) → admin · cambio de urgencia por admin → staff · nueva tarea creada → assignee.
+- ✅ **Pendientes con hora**: nuevo campo `hora` (time) en checklists. El form muestra un picker `<input type="time">` junto al título y al toggle "Diario". El item muestra una píldora con la hora (o "Hora" para asignar después).
+- ✅ **`autoGenerateRepeatablesByHour()`** (`lib/checklistAuto.js`): cada minuto, mientras la app está abierta, se regenera la copia del día *sólo* después de pasada la hora Paraguay (si hora=null se genera al instante). Se aplica en admin **y** staff.
+- ✅ **`supabase/09_checklist_hora.sql`** idempotente: `alter table checklists add column if not exists hora time` + índice (user_id,fecha,hora) + `notify pgrst, 'reload schema'`.
+
 ## What's been implemented (2026-05-02 — UX fixes & push reliability)
 - ✅ **Push subscription robusto**: `webpush.js` ahora hace *delete-then-insert* (scope `user_id+endpoint`) en vez de `upsert(onConflict:…)`. Soluciona el error "there is no unique or exclusion constraint matching the ON CONFLICT specification" que aparecía al activar notificaciones en iOS.
 - ✅ **`supabase/07c_push_unique_fix.sql`** idempotente: re-crea tabla, de-duplica filas, asegura `UNIQUE(user_id, endpoint)`, RLS y `NOTIFY pgrst, 'reload schema'`. **Ejecutar una vez en Supabase SQL Editor**.

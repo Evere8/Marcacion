@@ -6,7 +6,7 @@ import { getHighAccuracyPosition, reverseGeocode, getDeviceInfo } from '../../li
 import { paraguayNow } from '../../lib/format';
 import { ArrowLeft, Crosshair, CheckCircle2, Loader2, LogIn as InIcon, LogOut as OutIcon, AlertTriangle, MapPin } from 'lucide-react';
 import { toast } from 'sonner';
-import { sendNotificationBulk } from '../../hooks/useNotifications';
+import { sendNotificationBulk, notifyAllAdmins } from '../../hooks/useNotifications';
 
 export default function ClockIn() {
   const { user, profile } = useAuth();
@@ -73,14 +73,18 @@ export default function ClockIn() {
       const { error } = await supabase.from('marks').insert(payload);
       if (error) throw error;
 
-      const { data: admins } = await supabase.from('profiles').select('id').eq('rol', 'admin').eq('activo', true);
-      if (admins?.length) {
-        await sendNotificationBulk(admins.map((a) => a.id), {
+      // Notify all admins (in-app + push). Wrapped to never block the
+      // success flow if the notification insert fails.
+      const tipoLabel = tipo === 'entrada' ? 'entrada' : 'salida';
+      try {
+        await notifyAllAdmins({
           tipo: 'marcacion',
-          titulo: `${profile.nombre} marcó ${tipo}`,
-          mensaje: address || 'Ubicación registrada',
+          titulo: `${profile.nombre} marcó ${tipoLabel}`,
+          mensaje: `${address || 'Ubicación registrada'} · ${hora.slice(0, 5)}`,
           link: '/admin',
         });
+      } catch (e) {
+        console.warn('[clockin] admin notification failed:', e);
       }
       if (window.__clockin_int) { clearInterval(window.__clockin_int); window.__clockin_int = null; }
       setPhase('done');
