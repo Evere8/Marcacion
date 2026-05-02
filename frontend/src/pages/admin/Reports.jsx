@@ -1,9 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
-import { Input } from '../../components/ui/input';
-import { Label } from '../../components/ui/label';
-import { Loader2, FileText, Mail, Plus, Trash2, Send, Download, MapPin, Camera, Clock } from 'lucide-react';
+import { Loader2, FileText, Send, Download, MapPin, Camera, Clock } from 'lucide-react';
 import { formatTime, formatDateEs, todayISO, computeMarkDelay, minutesToText } from '../../lib/format';
 import { mapsUrl } from '../../lib/gps';
 import { deleteMarkPhoto } from '../../lib/upload';
@@ -22,9 +20,6 @@ export default function AdminReports() {
   const [marks, setMarks] = useState([]);
   const [personal, setPersonal] = useState([]);
   const [cfg, setCfg] = useState({ hora_entrada: '08:00', hora_salida: '17:00', tolerancia_minutos: 10 });
-  const [recipients, setRecipients] = useState([]);
-  const [newEmail, setNewEmail] = useState('');
-  const [newName, setNewName] = useState('');
   const [loading, setLoading] = useState(true);
   const [pdfBusy, setPdfBusy] = useState(false);
 
@@ -39,11 +34,10 @@ export default function AdminReports() {
   async function loadAll() {
     setLoading(true);
     const fromISO = rangeFromISO();
-    const [m, p, c, r] = await Promise.all([
+    const [m, p, c] = await Promise.all([
       supabase.from('marks').select('*, profiles:user_id(nombre,foto_perfil,email)').gte('fecha', fromISO).order('fecha', { ascending: false }).order('created_at'),
       supabase.from('profiles').select('id,nombre,email,foto_perfil').eq('rol', 'personal').eq('activo', true),
       supabase.from('attendance_config').select('*').limit(1).maybeSingle(),
-      supabase.from('report_recipients').select('*').order('created_at'),
     ]);
     setMarks(m.data || []);
     setPersonal(p.data || []);
@@ -52,23 +46,9 @@ export default function AdminReports() {
       hora_salida: c.data.hora_salida?.slice(0, 5) || '17:00',
       tolerancia_minutos: c.data.tolerancia_minutos ?? 10,
     });
-    setRecipients(r.data || []);
     setLoading(false);
   }
   useEffect(() => { loadAll(); /* eslint-disable-next-line */ }, [range]);
-
-  async function addRecipient() {
-    if (recipients.length >= 3) { toast.error('Máximo 3 correos'); return; }
-    if (!/^[^@]+@[^@]+\.[^@]+$/.test(newEmail)) { toast.error('Correo inválido'); return; }
-    const { error } = await supabase.from('report_recipients').insert({ email: newEmail.trim().toLowerCase(), nombre: newName.trim() || null });
-    if (error) { toast.error(error.message); return; }
-    setNewEmail(''); setNewName('');
-    loadAll();
-  }
-  async function delRecipient(id) {
-    await supabase.from('report_recipients').delete().eq('id', id);
-    loadAll();
-  }
 
   // Group marks by employee → day with entrada/salida + computed delay
   const employees = useMemo(() => {
@@ -96,7 +76,7 @@ export default function AdminReports() {
     return Math.floor((b - a) / 60000); // minutes
   }
 
-  async function generateAndShare(scope) {
+  async function generateAndShare(scope, mode = 'share') {
     setPdfBusy(true);
     try {
       const list = scope === 'all' ? employees : employees.filter((e) => e.id === scope);
@@ -109,20 +89,29 @@ export default function AdminReports() {
         includePhotos: true,
       });
       const filename = `alfatwin-reporte-${range}-${todayISO()}.pdf`;
-      const subject = `ALFATWIN · ${scope === 'all' ? 'Reporte completo' : list[0].nombre} (${range})`;
-      const body = `Adjunto el reporte de marcaciones (${range}).\n\nGenerado: ${new Date().toLocaleString('es-ES')}`;
-      const result = await sharePdf(blob, {
-        filename,
-        subject,
-        body,
-        recipients: recipients.map((r) => r.email),
-      });
-      if (result === 'shared') toast.success('Reporte compartido');
-      else if (result === 'aborted') toast('Cancelado');
-      else toast.success('PDF descargado · se abrió tu correo');
 
-      // Best-effort: limpiar fotos del rango (queda la copia en el correo)
-      if (window.confirm('¿Eliminar las fotos respaldadas (ya quedan en el PDF que enviaste)?')) {
+      if (mode === 'download') {
+        // Plain download — no share, no mailto.
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 30000);
+        toast.success('PDF descargado');
+      } else {
+        const subject = `ALFATWIN · ${scope === 'all' ? 'Reporte completo' : list[0].nombre} (${range})`;
+        const body = `Adjunto el reporte de marcaciones (${range}).\n\nGenerado: ${new Date().toLocaleString('es-ES')}`;
+        const result = await sharePdf(blob, { filename, subject, body, recipients: [] });
+        if (result === 'shared') toast.success('Reporte compartido');
+        else if (result === 'aborted') toast('Cancelado');
+        else toast.success('PDF descargado');
+      }
+
+      // Best-effort: limpiar fotos del rango (queda la copia en el PDF)
+      if (window.confirm('¿Eliminar las fotos respaldadas del servidor (ya quedan en el PDF)?')) {
         const photos = [];
         for (const u of list) for (const d of u.days) {
           if (d.entrada?.foto_url) photos.push({ id: d.entrada.id, url: d.entrada.foto_url });
@@ -163,46 +152,27 @@ export default function AdminReports() {
             </button>
           ))}
           <button
-            onClick={() => generateAndShare('all')}
+            onClick={() => generateAndShare('all', 'download')}
+            disabled={pdfBusy}
+            className="btn-ghost flex items-center gap-2"
+            data-testid="reports-download-all"
+            title="Solo descargar el PDF"
+          >
+            {pdfBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+            Descargar PDF
+          </button>
+          <button
+            onClick={() => generateAndShare('all', 'share')}
             disabled={pdfBusy}
             className="btn-gold flex items-center gap-2"
             data-testid="reports-share-all"
+            title="Compartir o enviar por correo desde tu dispositivo"
           >
             {pdfBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-            Enviar reporte completo
+            Compartir / Enviar
           </button>
         </div>
       </header>
-
-      {/* Recipients */}
-      <section className="card-premium p-5 fade-up">
-        <header className="flex items-center gap-3 mb-4">
-          <div className="w-10 h-10 rounded-xl bg-gold/15 text-gold grid place-items-center"><Mail className="w-4 h-4" /></div>
-          <div><p className="label-eyebrow">Destinatarios</p><h2 className="text-lg font-black">Correos para reportes (máx. 3)</h2></div>
-        </header>
-        <div className="grid sm:grid-cols-3 gap-2 mb-3">
-          {recipients.map((r) => (
-            <div key={r.id} className="flex items-center gap-2 rounded-xl bg-white/5 px-3 py-2" data-testid={`recipient-${r.id}`}>
-              <Mail className="w-3.5 h-3.5 text-gold shrink-0" />
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-bold text-white truncate">{r.email}</p>
-                {r.nombre && <p className="text-[10px] text-zinc-500 truncate">{r.nombre}</p>}
-              </div>
-              <button onClick={() => delRecipient(r.id)} className="p-1.5 rounded-md hover:bg-red-500/10" data-testid={`recipient-del-${r.id}`}>
-                <Trash2 className="w-3.5 h-3.5 text-red-400" />
-              </button>
-            </div>
-          ))}
-          {recipients.length === 0 && <p className="text-zinc-500 text-sm sm:col-span-3">Aún no hay destinatarios. Estos correos se sugieren al compartir el PDF.</p>}
-        </div>
-        {recipients.length < 3 && (
-          <div className="flex gap-2 flex-wrap">
-            <Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Nombre (opcional)" className="bg-panel border-white/10 h-10 rounded-xl flex-1 min-w-[150px]" data-testid="recipient-name" />
-            <Input value={newEmail} onChange={(e) => setNewEmail(e.target.value)} placeholder="correo@ejemplo.com" type="email" className="bg-panel border-white/10 h-10 rounded-xl flex-1 min-w-[200px]" data-testid="recipient-email" />
-            <button onClick={addRecipient} className="btn-gold flex items-center gap-2" data-testid="recipient-add"><Plus className="w-4 h-4" /> Añadir</button>
-          </div>
-        )}
-      </section>
 
       {/* Employees rows */}
       {loading && <div className="py-10 text-center text-zinc-500"><Loader2 className="w-5 h-5 mx-auto animate-spin" /></div>}
@@ -224,11 +194,20 @@ export default function AdminReports() {
                   <p className="text-lg font-black gold-gradient-text">{totalH}</p>
                 </div>
                 <button
-                  onClick={() => generateAndShare(emp.id)}
+                  onClick={() => generateAndShare(emp.id, 'download')}
+                  className="btn-ghost flex items-center gap-2 !text-xs"
+                  data-testid={`report-download-${emp.id}`}
+                  title="Descargar PDF"
+                >
+                  <Download className="w-3.5 h-3.5" /> Descargar
+                </button>
+                <button
+                  onClick={() => generateAndShare(emp.id, 'share')}
                   className="btn-ghost flex items-center gap-2 !text-xs"
                   data-testid={`report-share-${emp.id}`}
+                  title="Compartir / Enviar"
                 >
-                  <Download className="w-3.5 h-3.5" /> PDF / Enviar
+                  <Send className="w-3.5 h-3.5" /> Enviar
                 </button>
               </div>
             </header>

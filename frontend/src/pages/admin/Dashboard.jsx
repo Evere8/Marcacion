@@ -18,6 +18,43 @@ const goldIcon = L.divIcon({
   iconSize: [22, 22], iconAnchor: [11, 11],
 });
 
+function namedMarkerIcon(name, tipo) {
+  const safe = (name || '—').replace(/[<>"']/g, (c) => ({ '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const ringColor = tipo === 'salida' ? '#3b82f6' : '#22c55e';
+  return L.divIcon({
+    className: 'alfatwin-named-marker',
+    html: `
+      <div style="display:flex;flex-direction:column;align-items:center;transform:translateY(-6px);pointer-events:auto;">
+        <div style="
+          background:#0b0b0b;
+          color:#fff;
+          font-family:'Plus Jakarta Sans',system-ui,sans-serif;
+          font-weight:800;
+          font-size:11px;
+          line-height:1;
+          padding:5px 9px;
+          border-radius:9999px;
+          border:1.5px solid ${ringColor};
+          box-shadow:0 6px 16px rgba(0,0,0,.55);
+          white-space:nowrap;
+          letter-spacing:.2px;
+          max-width:140px;
+          overflow:hidden;
+          text-overflow:ellipsis;
+        ">${safe}</div>
+        <div style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:6px solid ${ringColor};margin-top:-1px;"></div>
+        <div style="
+          width:14px;height:14px;border-radius:50%;
+          background:#D4AF37;border:2px solid #050505;
+          box-shadow:0 0 0 3px rgba(212,175,55,.35);
+          margin-top:-2px;
+        "></div>
+      </div>`,
+    iconSize: [120, 46],
+    iconAnchor: [60, 46],
+  });
+}
+
 export default function Dashboard() {
   const { user } = useAuth();
   const [marks, setMarks] = useState([]);
@@ -176,7 +213,7 @@ export default function Dashboard() {
             <MapContainer center={mapCenter} zoom={13} scrollWheelZoom style={{ height: '100%', width: '100%' }}>
               <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" attribution='&copy; CARTO &copy; OpenStreetMap' />
               {marks.filter((m) => m.latitud).map((m) => (
-                <Marker key={m.id} position={[m.latitud, m.longitud]} icon={goldIcon} eventHandlers={{ click: () => setSelected(m) }}>
+                <Marker key={m.id} position={[m.latitud, m.longitud]} icon={namedMarkerIcon(m.profiles?.nombre, m.tipo)} eventHandlers={{ click: () => setSelected(m) }}>
                   <Popup>
                     <div className="space-y-1">
                       <p className="font-bold text-white">{m.profiles?.nombre}</p>

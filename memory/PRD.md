@@ -3,12 +3,20 @@
 ## Original problem statement
 Sistema profesional de marcación de personal (PWA + Supabase + Vercel) con marcación de entrada/salida en tiempo real, gestión de tareas con chat, ubicación GPS verificada (anti fake GPS), notificaciones push, panel administrativo completo. Dos roles: Administrador y Personal. Logo ALFATWIN (negro + dorado + plateado), tipografía Montserrat, diseño minimalista premium 2026.
 
+## What's been implemented (2026-05-02 — UX fixes & push reliability)
+- ✅ **Push subscription robusto**: `webpush.js` ahora hace *delete-then-insert* (scope `user_id+endpoint`) en vez de `upsert(onConflict:…)`. Soluciona el error "there is no unique or exclusion constraint matching the ON CONFLICT specification" que aparecía al activar notificaciones en iOS.
+- ✅ **`supabase/07c_push_unique_fix.sql`** idempotente: re-crea tabla, de-duplica filas, asegura `UNIQUE(user_id, endpoint)`, RLS y `NOTIFY pgrst, 'reload schema'`. **Ejecutar una vez en Supabase SQL Editor**.
+- ✅ **Hamburger menu en Admin (mobile)**: el bottom-nav saturado de 7 columnas se reemplazó por un botón hamburguesa en el topbar que abre un `<Sheet>` lateral con todas las secciones (Panel, Personal, Tareas, Pendientes, Reportes, Config, Salir).
+- ✅ **Markers nombrados en mapa Admin**: cada marcación en el mapa muestra una píldora con el nombre del empleado siempre visible, con borde verde para entradas / azul para salidas.
+- ✅ **Reports — UI simplificada**: se eliminó completamente la sección de "Destinatarios (correos)". Ahora hay dos botones globales y por empleado: **Descargar PDF** (descarga directa, sin correo) y **Compartir / Enviar** (Web Share API → permite enviar por correo/WhatsApp desde el dispositivo).
+- ✅ **Personal — guardado de perfil resiliente**: al crear un nuevo empleado, el `signUp` de Supabase ya no desloguea al admin. La sesión del admin se captura antes y se restaura con `setSession()` después del `signUp`, garantizando que el upsert posterior del perfil no falle por RLS.
+
 ## Stack (user-chosen)
 - Frontend: React 19 + React Router 7 + Tailwind + Shadcn UI (PWA, deployable a Vercel).
 - Backend: Supabase (Auth · Postgres · Realtime · Storage). No FastAPI, no MongoDB.
 - Mapas: Leaflet + OSM (CartoDB Dark tiles).
 - Compresión de imagen: `browser-image-compression`.
-- Notificaciones: Supabase Realtime → Web Notifications API + Service Worker.
+- Notificaciones: Supabase Realtime → Web Notifications API + Service Worker + Web Push real (VAPID + Edge Function `send-push`).
 
 ## User personas
 - **Admin (richy@gmail.com)**: gestiona personal, tareas, horarios, marca/notifica.

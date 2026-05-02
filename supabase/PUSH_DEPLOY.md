@@ -8,7 +8,7 @@ Esta guía configura **notificaciones push reales** en ALFATWIN para que lleguen
 
 | Pieza | Archivo | ¿Qué hace? |
 |------|---------|-----------|
-| Tabla `push_subscriptions` | `supabase/07_push.sql` | Almacena endpoint+claves de cada navegador suscrito |
+| Tabla `push_subscriptions` | `supabase/07_push.sql` + `supabase/07c_push_unique_fix.sql` | Almacena endpoint+claves de cada navegador suscrito |
 | Service Worker push handler | `frontend/public/sw.js` | Recibe el push del SO y muestra la notificación |
 | Helper de suscripción | `frontend/src/lib/webpush.js` | `subscribeToPush(userId)` / `unsubscribeFromPush(userId)` |
 | UI prompt + toggle | `frontend/src/components/PushPrompt.jsx` | Banner `<PushPrompt />` y `<PushToggle />` |

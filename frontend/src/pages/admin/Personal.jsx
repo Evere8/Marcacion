@@ -39,6 +39,13 @@ export default function Personal() {
       let avatar = form.foto_perfil || null;
       if (!form.id) {
         if (!form.password || form.password.length < 6) { toast.error('Contraseña mínimo 6 caracteres'); setSaving(false); return; }
+
+        // Capture the admin session before signUp — supabase-js v2 will
+        // replace the active session with the newly-created user's, which
+        // (a) logs the admin out of the panel and (b) breaks the profile
+        // upsert below because of RLS. We restore it right after.
+        const { data: { session: adminSession } } = await supabase.auth.getSession();
+
         const { data: s, error: signErr } = await supabase.auth.signUp({
           email: form.email,
           password: form.password,
@@ -47,7 +54,20 @@ export default function Personal() {
         if (signErr) throw signErr;
         const newId = s.user?.id;
         if (!newId) throw new Error('No se pudo crear el usuario');
-        if (file) avatar = await uploadAvatar(newId, file);
+
+        // Restore admin session so RLS lets us upsert the new profile
+        // (and so the admin stays logged in).
+        if (adminSession?.access_token && adminSession?.refresh_token) {
+          await supabase.auth.setSession({
+            access_token: adminSession.access_token,
+            refresh_token: adminSession.refresh_token,
+          });
+        }
+
+        if (file) {
+          try { avatar = await uploadAvatar(newId, file); }
+          catch (e) { console.warn('Avatar upload failed:', e); }
+        }
         const { error: upErr } = await supabase.from('profiles').upsert({
           id: newId,
           email: form.email,
@@ -62,7 +82,10 @@ export default function Personal() {
         if (upErr) throw upErr;
         toast.success('Personal creado');
       } else {
-        if (file) avatar = await uploadAvatar(form.id, file);
+        if (file) {
+          try { avatar = await uploadAvatar(form.id, file); }
+          catch (e) { console.warn('Avatar upload failed:', e); toast.error('No se pudo subir la foto, se guardó el resto'); }
+        }
         const { error } = await supabase.from('profiles').update({
           nombre: form.nombre,
           edad: form.edad ? +form.edad : null,

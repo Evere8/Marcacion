@@ -48,18 +48,32 @@ async function saveSubscriptionInDB(userId, sub) {
     p256dh: json.keys?.p256dh,
     auth: json.keys?.auth,
   };
-  // Try upserting WITH user_agent first (nice-to-have for diagnostics).
-  // If the column doesn't exist (PGRST204) fall back to the minimal row.
-  const withUA = { ...row, user_agent: navigator.userAgent };
+  // Robust path: delete any existing row owned by THIS user with the same
+  // endpoint, then insert a fresh one. We avoid `upsert(..., { onConflict })`
+  // because some older schemas don't have the matching unique index, which
+  // yields the "no unique or exclusion constraint matching the ON CONFLICT
+  // specification" Postgres error on iOS/Android.
+  try {
+    await supabase
+      .from('push_subscriptions')
+      .delete()
+      .eq('user_id', userId)
+      .eq('endpoint', json.endpoint);
+  } catch {
+    // ignore — the insert below is the source of truth
+  }
+
+  // Try with user_agent first (diagnostic), fall back if the column is
+  // missing in older deployments.
   let { error } = await supabase
     .from('push_subscriptions')
-    .upsert(withUA, { onConflict: 'user_id,endpoint' });
+    .insert({ ...row, user_agent: navigator.userAgent });
   if (error && (error.code === 'PGRST204' || /user_agent/.test(error.message || ''))) {
-    const retry = await supabase
-      .from('push_subscriptions')
-      .upsert(row, { onConflict: 'user_id,endpoint' });
+    const retry = await supabase.from('push_subscriptions').insert(row);
     error = retry.error;
   }
+  // If a duplicate slipped in due to RLS race, treat as success.
+  if (error && /duplicate key/i.test(error.message || '')) error = null;
   if (error) throw error;
 }
 
