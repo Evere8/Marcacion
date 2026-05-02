@@ -5,7 +5,6 @@ import { useRealtime } from '../../hooks/useRealtime';
 import { useAuth } from '../../contexts/AuthContext';
 import { ArrowLeft, Send, Trash2, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { sendNotification } from '../../hooks/useNotifications';
 
 export default function AdminTaskDetail() {
   return <TaskChatView basePath="/admin/tareas" isAdmin />;
@@ -94,15 +93,8 @@ export function TaskChatView({ basePath, isAdmin }) {
       if (error) throw error;
       // Replace optimistic with real.
       setMessages((prev) => prev.map((m) => (m.id === tempId ? data : m)));
-      const targetId = isAdmin ? task.assignee_id : task.admin_id;
-      if (targetId) {
-        await sendNotification(targetId, {
-          tipo: 'chat',
-          titulo: `Mensaje en "${task.titulo}"`,
-          mensaje: `${profile?.nombre}: ${body.slice(0, 80)}`,
-          link: `${basePath}/${id}`,
-        });
-      }
+      // Recipient notification is created server-side by trigger
+      // `trg_task_chat_notify` (see 10_notification_triggers.sql).
     } catch (e) {
       // Remove optimistic on failure.
       setMessages((prev) => prev.filter((m) => m.id !== tempId));
@@ -129,15 +121,8 @@ export function TaskChatView({ basePath, isAdmin }) {
       toast.error(error.message);
       return;
     }
-    if (!isAdmin && task.admin_id) {
-      const labels = { pendiente: 'pendiente', en_progreso: 'en progreso', completada: 'completada' };
-      await sendNotification(task.admin_id, {
-        tipo: 'tarea',
-        titulo: `Tarea ${labels[estado] || estado}`,
-        mensaje: `${profile?.nombre} marcó "${task.titulo}" como ${labels[estado] || estado}`,
-        link: `/admin/tareas/${id}`,
-      });
-    }
+    // Admin notification is created server-side by trigger
+    // `trg_tasks_notify_status` (see 10_notification_triggers.sql).
   }
 
   async function setUrgencia(urgencia) {
@@ -150,16 +135,9 @@ export function TaskChatView({ basePath, isAdmin }) {
       toast.error(error.message);
       return;
     }
-    if (isAdmin && task.assignee_id) {
-      const labels = { rojo: '🔴 URGENTE', amarillo: '🟡 Apurar', verde: '🟢 A tiempo' };
-      await sendNotification(task.assignee_id, {
-        tipo: 'tarea',
-        titulo: `Cambio de prioridad: ${labels[urgencia]}`,
-        mensaje: `"${task.titulo}" ahora es ${labels[urgencia]}`,
-        link: `/app/tareas/${id}`,
-      });
-      toast.success('Prioridad actualizada y notificada');
-    }
+    // Assignee notification is created server-side by trigger
+    // `trg_tasks_notify_urgencia` (see 10_notification_triggers.sql).
+    if (isAdmin) toast.success('Prioridad actualizada y notificada');
   }
 
   if (!task) return <p className="text-zinc-500">Cargando tarea…</p>;

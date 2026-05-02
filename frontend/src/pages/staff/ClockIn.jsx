@@ -6,7 +6,6 @@ import { getHighAccuracyPosition, reverseGeocode, getDeviceInfo } from '../../li
 import { paraguayNow } from '../../lib/format';
 import { ArrowLeft, Crosshair, CheckCircle2, Loader2, LogIn as InIcon, LogOut as OutIcon, AlertTriangle, MapPin } from 'lucide-react';
 import { toast } from 'sonner';
-import { sendNotificationBulk, notifyAllAdmins } from '../../hooks/useNotifications';
 
 export default function ClockIn() {
   const { user, profile } = useAuth();
@@ -73,19 +72,11 @@ export default function ClockIn() {
       const { error } = await supabase.from('marks').insert(payload);
       if (error) throw error;
 
-      // Notify all admins (in-app + push). Wrapped to never block the
-      // success flow if the notification insert fails.
-      const tipoLabel = tipo === 'entrada' ? 'entrada' : 'salida';
-      try {
-        await notifyAllAdmins({
-          tipo: 'marcacion',
-          titulo: `${profile.nombre} marcó ${tipoLabel}`,
-          mensaje: `${address || 'Ubicación registrada'} · ${hora.slice(0, 5)}`,
-          link: '/admin',
-        });
-      } catch (e) {
-        console.warn('[clockin] admin notification failed:', e);
-      }
+      // Admin notification is now created server-side by trigger
+      // `trg_marks_notify_admins` (see 10_notification_triggers.sql).
+      // No client-side insert needed — it bypasses RLS and works even if
+      // the staff cannot read the admins' profiles.
+
       if (window.__clockin_int) { clearInterval(window.__clockin_int); window.__clockin_int = null; }
       setPhase('done');
       toast.success(`Marcación de ${tipo} registrada`);

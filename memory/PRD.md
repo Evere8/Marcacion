@@ -3,6 +3,17 @@
 ## Original problem statement
 Sistema profesional de marcación de personal (PWA + Supabase + Vercel) con marcación de entrada/salida en tiempo real, gestión de tareas con chat, ubicación GPS verificada (anti fake GPS), notificaciones push, panel administrativo completo. Dos roles: Administrador y Personal. Logo ALFATWIN (negro + dorado + plateado), tipografía Montserrat, diseño minimalista premium 2026.
 
+## What's been implemented (2026-05-02 v3 — Triggers servidor + recordatorios pendientes)
+- 🔥 **ROOT CAUSE encontrado**: las notificaciones de staff → admin nunca llegaban porque la RLS `profiles_select` impide a un staff leer la lista de admins. `notifyAllAdmins()` desde el cliente devolvía `[]` y nunca insertaba la notificación.
+- ✅ **`supabase/10_notification_triggers.sql`** — TRIGGERS `security definer` (bypass RLS) que ahora son la **única fuente** de notificaciones automáticas:
+    1. `trg_marks_notify_admins` — al INSERT en `marks` notifica a TODOS los admins.
+    2. `trg_task_chat_notify` — al INSERT en `task_chat` notifica a la contraparte.
+    3. `trg_tasks_notify_status` — al cambio de `estado` notifica al admin.
+    4. `trg_tasks_notify_urgencia` — al cambio de `urgencia` notifica al assignee.
+    5. `trg_tasks_notify_insert` — nueva tarea creada notifica al assignee.
+- ✅ **Recordatorios de pendientes** (10 min antes + en la hora) vía función `checklist_remind_due()` programada con `pg_cron` cada minuto. Ventanas de 2 min y 1 min para tolerar jitter; deduplicación por título. El `pg_cron` se intenta habilitar pero no rompe si tu plan no lo soporta.
+- ✅ **Limpieza cliente**: removidos los `sendNotification()` redundantes en `ClockIn.jsx`, `TaskDetail.jsx`, `Tasks.jsx` (los triggers son la fuente de verdad). Dashboard mantiene los avisos manuales admin → staff.
+
 ## What's been implemented (2026-05-02 v2 — Notificaciones robustas + hora en pendientes)
 - ✅ **Helper `notifyAllAdmins()`** en `hooks/useNotifications.js` — usado por ClockIn para notificar a todos los admins activos sin duplicar lookups. Incluye `console.error` cuando un insert falla, para detectar problemas RLS rápido.
 - ✅ **Notificaciones existentes verificadas y robustecidas**: marcación entrada/salida → admins · chat de tarea → contraparte · cambio de estado por staff (en_progreso/completada) → admin · cambio de urgencia por admin → staff · nueva tarea creada → assignee.

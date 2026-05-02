@@ -10,7 +10,6 @@ import { Textarea } from '../../components/ui/textarea';
 import { Label } from '../../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
 import { toast } from 'sonner';
-import { sendNotification } from '../../hooks/useNotifications';
 
 const empty = { titulo: '', descripcion: '', urgencia: 'verde', assignee_id: '', fecha_limite: '' };
 
@@ -44,11 +43,8 @@ export default function Tasks() {
         fecha_limite: form.fecha_limite || null,
       }).select().single();
       if (error) throw error;
-      await sendNotification(form.assignee_id, {
-        tipo: 'tarea', titulo: 'Nueva tarea asignada',
-        mensaje: `${form.titulo} (${form.urgencia})`,
-        link: `/app/tareas/${data.id}`,
-      });
+      // Assignee notification is created server-side by trigger
+      // `trg_tasks_notify_insert` (see 10_notification_triggers.sql).
       toast.success('Tarea creada y notificada');
       setOpen(false); setForm(empty); load();
     } catch (e) { toast.error(e.message || 'Error'); } finally { setSaving(false); }
@@ -63,10 +59,8 @@ export default function Tasks() {
       load();
       return;
     }
-    await sendNotification(assignee_id, {
-      tipo: 'tarea', titulo: 'Cambio de urgencia',
-      mensaje: `${titulo} → ${urgencia}`, link: `/app/tareas/${id}`,
-    });
+    // Assignee notification is created server-side by trigger
+    // `trg_tasks_notify_urgencia` (see 10_notification_triggers.sql).
   }
 
   const filtered = tasks.filter((t) => filter === 'todas' || t.urgencia === filter);
