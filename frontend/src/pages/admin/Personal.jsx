@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useRealtime } from '../../hooks/useRealtime';
 import { uploadAvatar } from '../../lib/upload';
-import { Plus, Edit2, Trash2, Power, PowerOff, User as UserIcon, Loader2 } from 'lucide-react';
+import { Plus, Edit2, Trash2, Power, PowerOff, User as UserIcon, Loader2, KeyRound, ChevronRight } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../../components/ui/dialog';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
@@ -19,6 +20,9 @@ export default function Personal() {
   const [file, setFile] = useState(null);
   const [saving, setSaving] = useState(false);
   const [q, setQ] = useState('');
+  const [pwdTarget, setPwdTarget] = useState(null); // {id, nombre}
+  const [newPwd, setNewPwd] = useState('');
+  const [pwdSaving, setPwdSaving] = useState(false);
 
   async function load() {
     const { data } = await supabase.from('profiles').select('*').eq('rol', 'personal').order('created_at', { ascending: false });
@@ -118,6 +122,20 @@ export default function Personal() {
     }
   }
 
+  async function changePassword() {
+    if (!pwdTarget) return;
+    if (!newPwd || newPwd.length < 6) { toast.error('Mínimo 6 caracteres'); return; }
+    setPwdSaving(true);
+    try {
+      const { error } = await supabase.rpc('admin_change_password', { target_id: pwdTarget.id, new_password: newPwd });
+      if (error) throw error;
+      toast.success(`Contraseña actualizada para ${pwdTarget.nombre}`);
+      setPwdTarget(null); setNewPwd('');
+    } catch (e) {
+      toast.error(`No se pudo cambiar: ${e.message || e}. Asegúrate de haber ejecutado 12_staff_tasks_admin_tools.sql.`);
+    } finally { setPwdSaving(false); }
+  }
+
   const filtered = list.filter((p) => !q || `${p.nombre} ${p.email}`.toLowerCase().includes(q.toLowerCase()));
 
   return (
@@ -136,23 +154,27 @@ export default function Personal() {
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {filtered.map((p) => (
           <div key={p.id} className="card-premium p-5 fade-up" data-testid={`personal-card-${p.id}`}>
-            <div className="flex items-start gap-4">
+            <Link to={`/admin/personal/${p.id}`} className="flex items-start gap-4 group" data-testid={`personal-open-${p.id}`}>
               <Avatar src={p.foto_perfil} name={p.nombre} size={54} />
               <div className="flex-1 min-w-0">
-                <p className="font-bold text-white truncate">{p.nombre}</p>
+                <p className="font-bold text-white truncate group-hover:text-gold transition-colors">{p.nombre}</p>
                 <p className="text-xs text-zinc-500 truncate">{p.email}</p>
                 <p className="text-xs text-zinc-600 truncate mt-1">{p.telefono || '—'}</p>
               </div>
-              {p.activo
-                ? <Badge className="bg-green-500/15 text-green-400 border-green-500/30">Activo</Badge>
-                : <Badge className="bg-zinc-700/40 text-zinc-400">Inactivo</Badge>}
-            </div>
-            <div className="mt-4 flex gap-2">
-              <button onClick={() => openEdit(p)} className="btn-ghost flex-1 flex items-center justify-center gap-1 !py-2" data-testid={`personal-edit-${p.id}`}><Edit2 className="w-3.5 h-3.5" /> Editar</button>
-              <button onClick={() => toggleActivo(p)} className="btn-ghost !px-3 !py-2" data-testid={`personal-toggle-${p.id}`} title={p.activo ? 'Desactivar' : 'Activar'}>
-                {p.activo ? <PowerOff className="w-3.5 h-3.5" /> : <Power className="w-3.5 h-3.5" />}
+              <div className="flex flex-col items-end gap-1">
+                {p.activo
+                  ? <Badge className="bg-green-500/15 text-green-400 border-green-500/30">Activo</Badge>
+                  : <Badge className="bg-zinc-700/40 text-zinc-400">Inactivo</Badge>}
+                <ChevronRight className="w-4 h-4 text-zinc-600 group-hover:text-gold transition-colors" />
+              </div>
+            </Link>
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <button onClick={() => openEdit(p)} className="btn-ghost flex items-center justify-center gap-1 !py-2" data-testid={`personal-edit-${p.id}`}><Edit2 className="w-3.5 h-3.5" /> Editar</button>
+              <button onClick={() => { setPwdTarget({ id: p.id, nombre: p.nombre }); setNewPwd(''); }} className="btn-ghost flex items-center justify-center gap-1 !py-2" data-testid={`personal-pwd-${p.id}`}><KeyRound className="w-3.5 h-3.5" /> Contraseña</button>
+              <button onClick={() => toggleActivo(p)} className="btn-ghost flex items-center justify-center gap-1 !py-2" data-testid={`personal-toggle-${p.id}`} title={p.activo ? 'Desactivar' : 'Activar'}>
+                {p.activo ? <PowerOff className="w-3.5 h-3.5" /> : <Power className="w-3.5 h-3.5" />} {p.activo ? 'Desactivar' : 'Activar'}
               </button>
-              <button onClick={() => del(p)} className="btn-ghost !px-3 !py-2 hover:!bg-red-500/10 hover:!text-red-400" data-testid={`personal-delete-${p.id}`}><Trash2 className="w-3.5 h-3.5" /></button>
+              <button onClick={() => del(p)} className="btn-ghost flex items-center justify-center gap-1 !py-2 hover:!bg-red-500/10 hover:!text-red-400" data-testid={`personal-delete-${p.id}`}><Trash2 className="w-3.5 h-3.5" /> Eliminar</button>
             </div>
           </div>
         ))}
@@ -184,6 +206,23 @@ export default function Personal() {
             <button onClick={() => setOpen(false)} className="btn-ghost" data-testid="form-cancel">Cancelar</button>
             <button onClick={save} disabled={saving} className="btn-gold flex items-center gap-2" data-testid="form-save">
               {saving && <Loader2 className="w-4 h-4 animate-spin" />} Guardar
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!pwdTarget} onOpenChange={(v) => { if (!v) { setPwdTarget(null); setNewPwd(''); } }}>
+        <DialogContent className="bg-surface border-white/10" data-testid="personal-pwd-dialog">
+          <DialogHeader><DialogTitle>Cambiar contraseña{pwdTarget ? ` · ${pwdTarget.nombre}` : ''}</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <Label className="label-eyebrow mb-2 block">Nueva contraseña (mínimo 6 caracteres)</Label>
+            <Input type="password" value={newPwd} onChange={(e) => setNewPwd(e.target.value)} className="bg-panel border-white/10 h-11 rounded-xl" data-testid="personal-pwd-input" autoFocus />
+            <p className="text-xs text-zinc-500">El empleado podrá iniciar sesión con la nueva contraseña inmediatamente. Sus sesiones activas pueden seguir abiertas hasta el próximo refresh.</p>
+          </div>
+          <DialogFooter>
+            <button onClick={() => { setPwdTarget(null); setNewPwd(''); }} className="btn-ghost">Cancelar</button>
+            <button onClick={changePassword} disabled={pwdSaving} className="btn-gold flex items-center gap-2" data-testid="personal-pwd-save">
+              {pwdSaving && <Loader2 className="w-4 h-4 animate-spin" />} Guardar contraseña
             </button>
           </DialogFooter>
         </DialogContent>

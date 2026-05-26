@@ -8,6 +8,7 @@ import AdminLayout from './components/Layout/AdminLayout';
 import StaffLayout from './components/Layout/StaffLayout';
 import AdminDashboard from './pages/admin/Dashboard';
 import AdminPersonal from './pages/admin/Personal';
+import AdminEmpleadoDetail from './pages/admin/EmpleadoDetail';
 import AdminTasks from './pages/admin/Tasks';
 import AdminTaskDetail from './pages/admin/TaskDetail';
 import AdminChecklist from './pages/admin/Checklist';
@@ -83,6 +84,7 @@ export default function App() {
             <Route path="/admin" element={<RoleGate role="admin"><AdminLayout /></RoleGate>}>
               <Route index element={<AdminDashboard />} />
               <Route path="personal" element={<AdminPersonal />} />
+              <Route path="personal/:id" element={<AdminEmpleadoDetail />} />
               <Route path="tareas" element={<AdminTasks />} />
               <Route path="tareas/:id" element={<AdminTaskDetail />} />
               <Route path="pendientes" element={<AdminChecklist />} />

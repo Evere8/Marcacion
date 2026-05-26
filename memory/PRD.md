@@ -107,3 +107,28 @@ Sistema profesional de marcación de personal (PWA + Supabase + Vercel) con marc
 - Reportes semanales por empleado (gráficos Recharts).
 - Multi-site (sucursales) con geofencing.
 - Caching offline avanzado (PWA SW para mutaciones offline en marcación).
+
+---
+
+## Sesión Feb 2026 — Tareas staff + admin tools + Vercel
+
+### Implementado
+- **Staff puede crear tareas auto-asignadas** (`/app/frontend/src/pages/staff/Tasks.jsx`) con diálogo de título/descripción/urgencia/fecha.
+- **Notificación a TODOS los admins** cuando un staff crea o cambia estado de su tarea (`/app/supabase/12_staff_tasks_admin_tools.sql`).
+- **Admin · Detalle de empleado** (`/app/frontend/src/pages/admin/EmpleadoDetail.jsx`, ruta `/admin/personal/:id`): ve tareas pendientes/en progreso/completadas y accede al chat de cada una.
+- **Admin · Cambiar contraseña** del empleado (botón "Contraseña" en card + diálogo) usando RPC `admin_change_password(target_id, new_password)`.
+- **RPC `crear_admin(email, password, nombre)`** para que el creador de la app dé de alta nuevos administradores (insertable desde SQL o un futuro botón).
+- **vercel.json** en `/app/vercel.json` apuntando a `frontend/` para desbloquear deploy en Vercel.
+
+### Pasos que el usuario debe ejecutar
+1. Ejecutar `12_staff_tasks_admin_tools.sql` en Supabase → SQL Editor (UNA VEZ).
+2. Hacer push a GitHub (función "Save to GitHub") y redeploy en Vercel — ya leerá `vercel.json`.
+3. Para crear un admin nuevo desde Supabase SQL Editor:
+   ```sql
+   select public.crear_admin('nuevoadmin@empresa.com', 'PasswordSeguro123', 'Nombre Apellido');
+   ```
+
+### Backlog
+- Push notifications programadas (pg_cron) — pendiente de verificar en plan Supabase.
+- Offline sync de marcaciones.
+- Tests E2E con testing_agent.
