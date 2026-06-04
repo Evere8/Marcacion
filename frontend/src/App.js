@@ -11,6 +11,7 @@ import AdminPersonal from './pages/admin/Personal';
 import AdminEmpleadoDetail from './pages/admin/EmpleadoDetail';
 import AdminTasks from './pages/admin/Tasks';
 import AdminTaskDetail from './pages/admin/TaskDetail';
+import AdminTrabajos from './pages/admin/Trabajos';
 import AdminChecklist from './pages/admin/Checklist';
 import AdminReports from './pages/admin/Reports';
 import AdminConfig from './pages/admin/Config';
@@ -87,6 +88,7 @@ export default function App() {
               <Route path="personal/:id" element={<AdminEmpleadoDetail />} />
               <Route path="tareas" element={<AdminTasks />} />
               <Route path="tareas/:id" element={<AdminTaskDetail />} />
+              <Route path="trabajos" element={<AdminTrabajos />} />
               <Route path="pendientes" element={<AdminChecklist />} />
               <Route path="reportes" element={<AdminReports />} />
               <Route path="config" element={<AdminConfig />} />
@@ -97,6 +99,7 @@ export default function App() {
               <Route path="historial" element={<StaffHistory />} />
               <Route path="tareas" element={<StaffTasks />} />
               <Route path="tareas/:id" element={<StaffTaskDetail />} />
+              <Route path="tareas-jefe/:id" element={<StaffTaskDetail />} />
               <Route path="pendientes" element={<StaffChecklist />} />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />

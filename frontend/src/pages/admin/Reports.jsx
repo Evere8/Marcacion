@@ -1,22 +1,28 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
-import { Loader2, FileText, Send, Download, MapPin, Camera, Clock } from 'lucide-react';
+import { Loader2, FileText, Send, Download, MapPin, Camera, Clock, FileSpreadsheet, Calendar } from 'lucide-react';
 import { formatTime, formatDateEs, todayISO, computeMarkDelay, minutesToText } from '../../lib/format';
 import { mapsUrl } from '../../lib/gps';
 import { deleteMarkPhoto } from '../../lib/upload';
 import { buildAttendancePdf, sharePdf } from '../../lib/reportPdf';
+import { downloadExcel, cellStyles } from '../../lib/excelExport';
+import { Input } from '../../components/ui/input';
+import { Label } from '../../components/ui/label';
 import { toast } from 'sonner';
 
 const RANGES = [
   { k: 'hoy', label: 'Hoy' },
   { k: 'semana', label: 'Esta semana' },
   { k: 'mes', label: 'Este mes' },
+  { k: 'custom', label: 'Personalizado' },
 ];
 
 export default function AdminReports() {
   const { user } = useAuth();
   const [range, setRange] = useState('hoy');
+  const [customFrom, setCustomFrom] = useState(todayISO());
+  const [customTo, setCustomTo] = useState(todayISO());
   const [marks, setMarks] = useState([]);
   const [personal, setPersonal] = useState([]);
   const [cfg, setCfg] = useState({ hora_entrada: '08:00', hora_salida: '17:00', tolerancia_minutos: 10 });
@@ -26,16 +32,21 @@ export default function AdminReports() {
   function rangeFromISO() {
     const t = new Date();
     if (range === 'hoy') return todayISO();
+    if (range === 'custom') return customFrom;
     const d = new Date();
     d.setDate(t.getDate() - (range === 'semana' ? 7 : 30));
     return d.toISOString().slice(0, 10);
+  }
+  function rangeToISO() {
+    return range === 'custom' ? customTo : todayISO();
   }
 
   async function loadAll() {
     setLoading(true);
     const fromISO = rangeFromISO();
+    const toISO = rangeToISO();
     const [m, p, c] = await Promise.all([
-      supabase.from('marks').select('*, profiles:user_id(nombre,foto_perfil,email)').gte('fecha', fromISO).order('fecha', { ascending: false }).order('created_at'),
+      supabase.from('marks').select('*, profiles:user_id(nombre,foto_perfil,email)').gte('fecha', fromISO).lte('fecha', toISO).order('fecha', { ascending: false }).order('created_at'),
       supabase.from('profiles').select('id,nombre,email,foto_perfil').eq('rol', 'personal').eq('activo', true),
       supabase.from('attendance_config').select('*').limit(1).maybeSingle(),
     ]);
@@ -48,7 +59,7 @@ export default function AdminReports() {
     });
     setLoading(false);
   }
-  useEffect(() => { loadAll(); /* eslint-disable-next-line */ }, [range]);
+  useEffect(() => { loadAll(); /* eslint-disable-next-line */ }, [range, customFrom, customTo]);
 
   // Group marks by employee → day with entrada/salida + computed delay
   const employees = useMemo(() => {
@@ -74,6 +85,50 @@ export default function AdminReports() {
     const b = new Date(s.created_at).getTime();
     if (b <= a) return null;
     return Math.floor((b - a) / 60000); // minutes
+  }
+
+  function exportExcel(scope) {
+    const list = scope === 'all' ? employees : employees.filter((e) => e.id === scope);
+    if (!list.length || list.every((e) => e.days.length === 0)) { toast.error('Sin datos para exportar'); return; }
+
+    const sections = list.map((emp) => {
+      const totalMin = emp.days.reduce((acc, d) => acc + (workedFor(d.entrada, d.salida) || 0), 0);
+      const totalH = `${Math.floor(totalMin / 60)}h ${totalMin % 60}m`;
+      const rows = emp.days.map((d) => {
+        const e = d.entrada, s = d.salida, wm = workedFor(e, s);
+        const ref = e || s;
+        const lateLabel = e ? (e.delay > 0 ? `+${e.delay}m` : 'A tiempo') : 'Sin marcar';
+        return [
+          d.fecha,
+          e ? e.hora?.slice(0, 5) : '—',
+          s ? s.hora?.slice(0, 5) : '—',
+          wm != null ? `${Math.floor(wm / 60)}h ${wm % 60}m` : '—',
+          ref?.direccion_geolocalizada || '—',
+          ref?.latitud != null ? `${ref.latitud.toFixed(5)}, ${ref.longitud.toFixed(5)}` : '—',
+          lateLabel,
+        ];
+      });
+      const styles = emp.days.map((d) => {
+        const e = d.entrada;
+        const lateStyle = !e ? cellStyles.redLight : (e.delay > 0 ? cellStyles.redLight : cellStyles.greenLight);
+        return [cellStyles.bold, cellStyles.greenLight, cellStyles.blueLight, cellStyles.bold, '', '', lateStyle];
+      });
+      return {
+        title: `${emp.nombre} · ${emp.email}  ·  Total trabajado: ${totalH}`,
+        headerColor: '#D4AF37',
+        headers: ['Fecha', 'Entrada', 'Salida', 'Trabajado', 'Ubicación', 'Coords', 'Estado'],
+        rows,
+        cellStyles: styles,
+      };
+    });
+
+    downloadExcel({
+      filename: `alfatwin-reporte-${range}-${rangeFromISO()}_${rangeToISO()}`,
+      title: 'ALFATWIN · Reporte de marcaciones',
+      subtitle: `Rango: ${rangeFromISO()} → ${rangeToISO()}  ·  Jornada: ${cfg.hora_entrada} - ${cfg.hora_salida}  ·  Tolerancia: ${cfg.tolerancia_minutos}m`,
+      sections,
+    });
+    toast.success('Excel descargado');
   }
 
   async function generateAndShare(scope, mode = 'share') {
@@ -162,6 +217,14 @@ export default function AdminReports() {
             Descargar PDF
           </button>
           <button
+            onClick={() => exportExcel('all')}
+            className="btn-ghost flex items-center gap-2"
+            data-testid="reports-excel-all"
+            title="Descargar reporte completo en Excel"
+          >
+            <FileSpreadsheet className="w-4 h-4" /> Excel
+          </button>
+          <button
             onClick={() => generateAndShare('all', 'share')}
             disabled={pdfBusy}
             className="btn-gold flex items-center gap-2"
@@ -173,6 +236,21 @@ export default function AdminReports() {
           </button>
         </div>
       </header>
+
+      {range === 'custom' && (
+        <div className="card-premium p-4 flex items-end gap-3 flex-wrap" data-testid="reports-custom-range">
+          <Calendar className="w-4 h-4 text-gold shrink-0 mb-3" />
+          <div className="min-w-[140px]">
+            <Label className="label-eyebrow mb-1 block">Desde</Label>
+            <Input type="date" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} className="bg-panel border-white/10 h-10 rounded-xl" data-testid="reports-custom-from" />
+          </div>
+          <div className="min-w-[140px]">
+            <Label className="label-eyebrow mb-1 block">Hasta</Label>
+            <Input type="date" value={customTo} onChange={(e) => setCustomTo(e.target.value)} className="bg-panel border-white/10 h-10 rounded-xl" data-testid="reports-custom-to" />
+          </div>
+          <p className="text-xs text-zinc-500 mb-3">Filtra reportes y descargas (PDF/Excel) por fecha personalizada.</p>
+        </div>
+      )}
 
       {/* Employees rows */}
       {loading && <div className="py-10 text-center text-zinc-500"><Loader2 className="w-5 h-5 mx-auto animate-spin" /></div>}
@@ -199,7 +277,15 @@ export default function AdminReports() {
                   data-testid={`report-download-${emp.id}`}
                   title="Descargar PDF"
                 >
-                  <Download className="w-3.5 h-3.5" /> Descargar
+                  <Download className="w-3.5 h-3.5" /> PDF
+                </button>
+                <button
+                  onClick={() => exportExcel(emp.id)}
+                  className="btn-ghost flex items-center gap-2 !text-xs"
+                  data-testid={`report-excel-${emp.id}`}
+                  title="Descargar Excel"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5" /> Excel
                 </button>
                 <button
                   onClick={() => generateAndShare(emp.id, 'share')}

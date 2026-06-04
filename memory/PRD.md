@@ -132,3 +132,25 @@ Sistema profesional de marcación de personal (PWA + Supabase + Vercel) con marc
 - Push notifications programadas (pg_cron) — pendiente de verificar en plan Supabase.
 - Offline sync de marcaciones.
 - Tests E2E con testing_agent.
+
+---
+
+## Sesión Feb 2026 (b) — Trabajos diarios + Exportar Excel
+
+### Implementado
+- **Tabla `trabajos`** (`/app/supabase/13_trabajos.sql`): `detalle text` + `cantidad numeric` + fecha/hora autogeneradas (zona Paraguay). Staff CRUD propio, admin SELECT-only.
+- **Staff /app/tareas reemplazado** (`/app/frontend/src/pages/staff/Tasks.jsx`): formulario simple (detalle + cantidad numérica), edición/eliminación, filtro por fecha, total del día. Mantiene una sección colapsada para "Tareas del jefe" (asignadas por admin) que abre el chat existente.
+- **Admin /admin/trabajos** (`/app/frontend/src/pages/admin/Trabajos.jsx`): vista read-only, segmentada por chofer con colores únicos por persona, filtros por rango de fechas (Hoy/7d/30d/custom), botón **Exportar Excel** que descarga `.xls` con cuadros, colores, resumen por chofer y headers ALFATWIN.
+- **Reports.jsx (`/admin/reportes`)**: agregado rango **Personalizado** con date pickers desde/hasta, botón **Excel** global y por empleado (formato idéntico al PDF con colores).
+- **Helper Excel** (`/app/frontend/src/lib/excelExport.js`): genera HTML→.xls con colores/estilos, sin librerías nuevas.
+- **AdminLayout** sidebar: nuevo enlace **Trabajos**.
+
+### Pasos que el usuario debe ejecutar
+1. **Supabase SQL Editor** → ejecutar `/app/supabase/13_trabajos.sql` (UNA vez).
+2. Push a GitHub y redeploy Vercel.
+
+### Notas
+- Admin NO puede editar/eliminar trabajos del staff (políticas RLS lo bloquean).
+- Si admin crea tareas asignadas (flujo viejo de "Tareas"), TODO sigue funcionando con chat + estados.
+- El Excel exportado es realmente HTML con MIME `application/vnd.ms-excel` — abre perfecto en Excel/LibreOffice/Sheets y conserva colores.
+

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Users, ClipboardList, Settings, LogOut, CheckSquare, FileText, Menu, X } from 'lucide-react';
+import { LayoutDashboard, Users, ClipboardList, Settings, LogOut, CheckSquare, FileText, Menu, Truck } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import Logo from '../Logo';
 import NotificationsBell from '../NotificationsBell';
@@ -10,6 +10,7 @@ const nav = [
   { to: '/admin', icon: LayoutDashboard, label: 'Panel', end: true },
   { to: '/admin/personal', icon: Users, label: 'Personal' },
   { to: '/admin/tareas', icon: ClipboardList, label: 'Tareas' },
+  { to: '/admin/trabajos', icon: Truck, label: 'Trabajos' },
   { to: '/admin/pendientes', icon: CheckSquare, label: 'Pendientes' },
   { to: '/admin/reportes', icon: FileText, label: 'Reportes' },
   { to: '/admin/config', icon: Settings, label: 'Config' },
