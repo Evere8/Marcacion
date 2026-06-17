@@ -174,7 +174,11 @@ export default function StaffTrabajos() {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="font-bold text-white whitespace-pre-wrap break-words">{r.detalle}</p>
-                <p className="text-[11px] text-zinc-500 mt-1">{r.fecha} · {r.hora?.slice(0, 5)}{r.updated_at && r.updated_at !== r.created_at ? ' · editado' : ''}</p>
+                <p className="text-[11px] text-zinc-500 mt-1">
+                  {r.fecha} · {r.hora?.slice(0, 5)}
+                  {r.duracion_segundos ? ` · ⏱ ${Math.floor(r.duracion_segundos / 3600)}h ${Math.floor((r.duracion_segundos % 3600) / 60)}m` : (r.iniciado_en && !r.finalizado_en) ? ' · ⏱ en curso' : ''}
+                  {r.updated_at && r.updated_at !== r.created_at ? ' · editado' : ''}
+                </p>
               </div>
               <div className="flex flex-col gap-1 shrink-0">
                 <button onClick={() => openEdit(r)} className="btn-ghost !px-2 !py-1.5" data-testid={`staff-trabajo-edit-${r.id}`} aria-label="Editar"><Pencil className="w-3.5 h-3.5" /></button>

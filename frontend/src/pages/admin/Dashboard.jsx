@@ -70,7 +70,7 @@ export default function Dashboard() {
     const today = todayISO();
     const safe = (p) => p.then((r) => r).catch(() => ({ data: [] }));
     const [m, p, t, c, ch] = await Promise.all([
-      safe(supabase.from('marks').select('*, profiles:user_id(nombre,foto_perfil,email)').eq('fecha', today).order('created_at', { ascending: false })),
+      safe(supabase.from('marks').select('*, profiles:user_id(nombre,foto_perfil,email,hora_entrada,hora_salida)').eq('fecha', today).order('created_at', { ascending: false })),
       safe(supabase.from('profiles').select('*').eq('activo', true)),
       safe(supabase.from('tasks').select('*, assignee:assignee_id(nombre)').order('created_at', { ascending: false }).limit(30)),
       safe(supabase.from('attendance_config').select('*').limit(1).maybeSingle()),
@@ -104,14 +104,15 @@ export default function Dashboard() {
   // Detailed per-employee daily report against schedule.
   const dailyReport = useMemo(() => {
     const tol = cfg.tolerancia_minutos ?? 10;
-    const [eh, em] = cfg.hora_entrada.split(':').map(Number);
-    const [sh, sm] = cfg.hora_salida.split(':').map(Number);
-    const targetEntrada = eh * 60 + em;
-    const targetSalida = sh * 60 + sm;
 
     const byUser = {};
     for (const p of personal.filter((x) => x.rol === 'personal')) {
-      byUser[p.id] = { id: p.id, nombre: p.nombre, foto_perfil: p.foto_perfil, entrada: null, salida: null };
+      byUser[p.id] = {
+        id: p.id, nombre: p.nombre, foto_perfil: p.foto_perfil,
+        hora_entrada: p.hora_entrada?.slice?.(0, 5) || cfg.hora_entrada,
+        hora_salida: p.hora_salida?.slice?.(0, 5) || cfg.hora_salida,
+        entrada: null, salida: null,
+      };
     }
     for (const m of marks) {
       if (!byUser[m.user_id]) continue;
@@ -119,6 +120,10 @@ export default function Dashboard() {
       if (m.tipo === 'salida') byUser[m.user_id].salida = m;
     }
     return Object.values(byUser).map((u) => {
+      const [eh, em] = u.hora_entrada.split(':').map(Number);
+      const [sh, sm] = u.hora_salida.split(':').map(Number);
+      const targetEntrada = eh * 60 + em;
+      const targetSalida = sh * 60 + sm;
       let entradaStatus = 'pendiente';
       let entradaDelta = null;
       if (u.entrada) {
@@ -444,7 +449,7 @@ function ScheduleCard({ u, cfg }) {
             <span className={`px-1.5 py-0.5 rounded-md border text-[9px] font-bold uppercase ${e.c}`}>{e.t}</span>
           </div>
           <p className="text-lg font-black text-white mt-1">{u.entrada ? u.entrada.hora?.slice(0, 5) : '—:—'}</p>
-          <p className="text-[10px] text-zinc-500">Esperada {cfg.hora_entrada}</p>
+          <p className="text-[10px] text-zinc-500">Esperada {u.hora_entrada}</p>
           {u.entradaStatus === 'tarde' && <p className="text-[10px] text-red-400 font-bold mt-0.5">+{u.entradaDelta} min tarde</p>}
           {u.entradaStatus === 'temprano' && u.entradaDelta !== null && <p className="text-[10px] text-emerald-400 font-bold mt-0.5">{u.entradaDelta < 0 ? `${-u.entradaDelta} min antes` : 'En punto'}</p>}
         </div>
@@ -454,7 +459,7 @@ function ScheduleCard({ u, cfg }) {
             <span className={`px-1.5 py-0.5 rounded-md border text-[9px] font-bold uppercase ${s.c}`}>{s.t}</span>
           </div>
           <p className="text-lg font-black text-white mt-1">{u.salida ? u.salida.hora?.slice(0, 5) : '—:—'}</p>
-          <p className="text-[10px] text-zinc-500">Esperada {cfg.hora_salida}</p>
+          <p className="text-[10px] text-zinc-500">Esperada {u.hora_salida}</p>
           {u.salidaStatus === 'temprano' && u.salidaDelta !== null && <p className="text-[10px] text-yellow-400 font-bold mt-0.5">{-u.salidaDelta} min antes</p>}
         </div>
       </div>

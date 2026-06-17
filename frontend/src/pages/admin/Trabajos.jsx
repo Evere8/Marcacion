@@ -82,34 +82,47 @@ export default function AdminTrabajos() {
 
   function exportarExcel() {
     if (grupos.length === 0) { toast.error('Sin trabajos en el rango'); return; }
+    const fmtDur = (s) => {
+      if (!s) return '—';
+      const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+      return `${h}h ${m}m ${sec}s`;
+    };
     const sections = grupos.map((g, idx) => {
       const color = colorFor(idx);
+      const durTotalSec = g.items.reduce((acc, it) => acc + (it.duracion_segundos || 0), 0);
       return {
-        title: `${g.nombre} · ${g.email}  ·  Total: ${g.total}`,
+        title: `${g.nombre} · ${g.email}  ·  Trabajos: ${g.items.length}  ·  Cantidad total: ${g.total}  ·  Tiempo total: ${fmtDur(durTotalSec)}`,
         headerColor: color.excelHeader,
-        headers: ['Fecha', 'Hora', 'Detalle', 'Cantidad', 'Editado'],
+        headers: ['Fecha', 'Hora carga', 'Detalle', 'Cantidad', 'Inicio', 'Fin', 'Duración', 'Editado'],
         rows: g.items.map((it) => [
           it.fecha,
           it.hora?.slice(0, 5) || '—',
           it.detalle,
           it.cantidad,
+          it.iniciado_en ? new Date(it.iniciado_en).toLocaleTimeString('es-PY', { hour: '2-digit', minute: '2-digit' }) : '—',
+          it.finalizado_en ? new Date(it.finalizado_en).toLocaleTimeString('es-PY', { hour: '2-digit', minute: '2-digit' }) : '—',
+          fmtDur(it.duracion_segundos),
           it.updated_at && it.updated_at !== it.created_at ? new Date(it.updated_at).toLocaleString('es-PY') : '—',
         ]),
-        cellStyles: g.items.map(() => ['', '', '', cellStyles.bold, cellStyles.greenLight]),
+        cellStyles: g.items.map(() => ['', '', '', cellStyles.bold, cellStyles.greenLight, cellStyles.blueLight, cellStyles.bold, '']),
       };
     });
     // Sección resumen al inicio
+    const durGeneralSec = grupos.reduce((acc, g) => acc + g.items.reduce((a, it) => a + (it.duracion_segundos || 0), 0), 0);
     sections.unshift({
       title: 'Resumen por chofer',
       headerColor: '#0b0b0b',
-      headers: ['Chofer', 'Email', 'Total trabajos', 'Cantidad total'],
-      rows: grupos.map((g) => [g.nombre, g.email, g.items.length, g.total]),
-      cellStyles: grupos.map(() => [cellStyles.bold, '', cellStyles.blueLight, cellStyles.greenLight]),
+      headers: ['Chofer', 'Email', 'Trabajos', 'Cantidad total', 'Tiempo total'],
+      rows: grupos.map((g) => [
+        g.nombre, g.email, g.items.length, g.total,
+        fmtDur(g.items.reduce((acc, it) => acc + (it.duracion_segundos || 0), 0)),
+      ]),
+      cellStyles: grupos.map(() => [cellStyles.bold, '', cellStyles.blueLight, cellStyles.greenLight, cellStyles.bold]),
     });
     downloadExcel({
       filename: `alfatwin-trabajos-${from}_${to}`,
       title: 'ALFATWIN · Reporte de trabajos',
-      subtitle: `Rango: ${from} → ${to}  ·  Choferes: ${grupos.length}  ·  Trabajos: ${rows.length}  ·  Cantidad total: ${totalGeneral}`,
+      subtitle: `Rango: ${from} → ${to}  ·  Choferes: ${grupos.length}  ·  Trabajos: ${rows.length}  ·  Cantidad total: ${totalGeneral}  ·  Tiempo total: ${fmtDur(durGeneralSec)}`,
       sections,
     });
     toast.success('Excel descargado');
@@ -190,25 +203,39 @@ export default function AdminTrabajos() {
                       <th className="px-3 py-2 text-left">Hora</th>
                       <th className="px-3 py-2 text-left">Detalle</th>
                       <th className="px-3 py-2 text-right">Cantidad</th>
+                      <th className="px-3 py-2 text-left">Duración viaje</th>
                       <th className="px-3 py-2 text-left">Editado</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {g.items.map((it) => (
-                      <tr key={it.id} className="border-t border-white/5 hover:bg-white/[0.03]">
-                        <td className="px-3 py-2 font-bold whitespace-nowrap">{it.fecha}</td>
-                        <td className="px-3 py-2 font-mono text-zinc-300">{it.hora?.slice(0, 5)}</td>
-                        <td className="px-3 py-2 text-zinc-200 whitespace-pre-wrap break-words">{it.detalle}</td>
-                        <td className="px-3 py-2 text-right">
-                          <span className={`inline-block px-2.5 py-1 rounded-md border text-xs font-black ${color.bg} ${color.border} ${color.text}`}>{it.cantidad}</span>
-                        </td>
-                        <td className="px-3 py-2 text-[11px] text-zinc-500">
-                          {it.updated_at && it.updated_at !== it.created_at
-                            ? new Date(it.updated_at).toLocaleString('es-PY', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
-                            : '—'}
-                        </td>
-                      </tr>
-                    ))}
+                    {g.items.map((it) => {
+                      const dur = it.duracion_segundos || 0;
+                      const h = Math.floor(dur / 3600), m = Math.floor((dur % 3600) / 60), sec = dur % 60;
+                      const durLabel = it.iniciado_en && it.finalizado_en
+                        ? `${h}h ${m}m ${sec}s`
+                        : it.iniciado_en && !it.finalizado_en ? 'En curso…' : '—';
+                      const durClass = it.finalizado_en
+                        ? 'bg-blue-500/15 text-blue-300 border-blue-500/30'
+                        : it.iniciado_en ? 'bg-green-500/15 text-green-300 border-green-500/30 animate-pulse' : 'bg-zinc-500/10 text-zinc-500 border-zinc-500/20';
+                      return (
+                        <tr key={it.id} className="border-t border-white/5 hover:bg-white/[0.03]">
+                          <td className="px-3 py-2 font-bold whitespace-nowrap">{it.fecha}</td>
+                          <td className="px-3 py-2 font-mono text-zinc-300">{it.hora?.slice(0, 5)}</td>
+                          <td className="px-3 py-2 text-zinc-200 whitespace-pre-wrap break-words">{it.detalle}</td>
+                          <td className="px-3 py-2 text-right">
+                            <span className={`inline-block px-2.5 py-1 rounded-md border text-xs font-black ${color.bg} ${color.border} ${color.text}`}>{it.cantidad}</span>
+                          </td>
+                          <td className="px-3 py-2">
+                            <span className={`inline-block px-2 py-0.5 rounded-md border text-[10px] font-bold ${durClass}`}>{durLabel}</span>
+                          </td>
+                          <td className="px-3 py-2 text-[11px] text-zinc-500">
+                            {it.updated_at && it.updated_at !== it.created_at
+                              ? new Date(it.updated_at).toLocaleString('es-PY', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+                              : '—'}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

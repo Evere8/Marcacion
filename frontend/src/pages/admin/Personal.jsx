@@ -8,10 +8,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 import { Badge } from '../../components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
 import { toast } from 'sonner';
 import { Avatar } from './Dashboard';
 
-const empty = { id: null, nombre: '', edad: '', telefono: '', direccion: '', email: '', password: '', foto_perfil: '', activo: true };
+const empty = { id: null, nombre: '', edad: '', telefono: '', direccion: '', email: '', password: '', foto_perfil: '', activo: true, cedula: '', cargo: 'chofer', hora_entrada: '08:00', hora_salida: '17:00' };
 
 export default function Personal() {
   const [list, setList] = useState([]);
@@ -28,7 +29,7 @@ export default function Personal() {
     const { data } = await supabase.from('profiles').select('*').eq('rol', 'personal').order('created_at', { ascending: false });
     setList(data || []);
   }
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
   useRealtime('admin_personal', (ch) => {
     ch.on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, load);
   }, []);
@@ -82,6 +83,10 @@ export default function Personal() {
           foto_perfil: avatar,
           rol: 'personal',
           activo: true,
+          cedula: form.cedula || null,
+          cargo: form.cargo || 'chofer',
+          hora_entrada: form.hora_entrada || null,
+          hora_salida: form.hora_salida || null,
         });
         if (upErr) throw upErr;
         toast.success('Personal creado');
@@ -96,6 +101,10 @@ export default function Personal() {
           telefono: form.telefono || null,
           direccion: form.direccion || null,
           foto_perfil: avatar,
+          cedula: form.cedula || null,
+          cargo: form.cargo || 'chofer',
+          hora_entrada: form.hora_entrada || null,
+          hora_salida: form.hora_salida || null,
         }).eq('id', form.id);
         if (error) throw error;
         toast.success('Personal actualizado');
@@ -159,7 +168,17 @@ export default function Personal() {
               <div className="flex-1 min-w-0">
                 <p className="font-bold text-white truncate group-hover:text-gold transition-colors">{p.nombre}</p>
                 <p className="text-xs text-zinc-500 truncate">{p.email}</p>
-                <p className="text-xs text-zinc-600 truncate mt-1">{p.telefono || '—'}</p>
+                <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                  {p.cargo && (
+                    <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-md border ${p.cargo === 'chofer' ? 'bg-amber-500/10 text-amber-300 border-amber-500/30' : 'bg-sky-500/10 text-sky-300 border-sky-500/30'}`}>
+                      {p.cargo === 'chofer' ? '🚚 Chofer' : '🧑‍💼 Admin'}
+                    </span>
+                  )}
+                  {(p.hora_entrada || p.hora_salida) && (
+                    <span className="text-[10px] text-zinc-500">⏱ {p.hora_entrada?.slice(0, 5) || '—'}–{p.hora_salida?.slice(0, 5) || '—'}</span>
+                  )}
+                  {p.cedula && <span className="text-[10px] text-zinc-500">CI {p.cedula}</span>}
+                </div>
               </div>
               <div className="flex flex-col items-end gap-1">
                 {p.activo
@@ -193,6 +212,19 @@ export default function Personal() {
             <Field label="Nombre*" value={form.nombre} onChange={(v) => setForm({ ...form, nombre: v })} span testId="form-nombre" />
             <Field label="Email*" type="email" value={form.email} onChange={(v) => setForm({ ...form, email: v })} disabled={!!form.id} span testId="form-email" />
             {!form.id && <Field label="Contraseña*" type="password" value={form.password} onChange={(v) => setForm({ ...form, password: v })} span testId="form-password" />}
+            <Field label="Cédula" value={form.cedula} onChange={(v) => setForm({ ...form, cedula: v })} testId="form-cedula" />
+            <div>
+              <Label className="label-eyebrow mb-2 block">Cargo</Label>
+              <Select value={form.cargo || 'chofer'} onValueChange={(v) => setForm({ ...form, cargo: v })}>
+                <SelectTrigger className="bg-panel border-white/10 h-11 rounded-xl" data-testid="form-cargo"><SelectValue /></SelectTrigger>
+                <SelectContent className="bg-surface border-white/10">
+                  <SelectItem value="chofer">🚚 Chofer</SelectItem>
+                  <SelectItem value="administracion">🧑‍💼 Administración</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <Field label="Hora de entrada" type="time" value={form.hora_entrada?.slice?.(0, 5) || form.hora_entrada || ''} onChange={(v) => setForm({ ...form, hora_entrada: v })} testId="form-hora-entrada" />
+            <Field label="Hora de salida" type="time" value={form.hora_salida?.slice?.(0, 5) || form.hora_salida || ''} onChange={(v) => setForm({ ...form, hora_salida: v })} testId="form-hora-salida" />
             <Field label="Edad" type="number" value={form.edad} onChange={(v) => setForm({ ...form, edad: v })} testId="form-edad" />
             <Field label="Teléfono" value={form.telefono} onChange={(v) => setForm({ ...form, telefono: v })} testId="form-telefono" />
             <Field label="Dirección" value={form.direccion} onChange={(v) => setForm({ ...form, direccion: v })} span testId="form-direccion" />

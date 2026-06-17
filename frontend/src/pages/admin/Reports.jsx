@@ -46,8 +46,8 @@ export default function AdminReports() {
     const fromISO = rangeFromISO();
     const toISO = rangeToISO();
     const [m, p, c] = await Promise.all([
-      supabase.from('marks').select('*, profiles:user_id(nombre,foto_perfil,email)').gte('fecha', fromISO).lte('fecha', toISO).order('fecha', { ascending: false }).order('created_at'),
-      supabase.from('profiles').select('id,nombre,email,foto_perfil').eq('rol', 'personal').eq('activo', true),
+      supabase.from('marks').select('*, profiles:user_id(nombre,foto_perfil,email,hora_entrada,hora_salida,cedula,cargo)').gte('fecha', fromISO).lte('fecha', toISO).order('fecha', { ascending: false }).order('created_at'),
+      supabase.from('profiles').select('id,nombre,email,foto_perfil,hora_entrada,hora_salida,cedula,cargo').eq('rol', 'personal').eq('activo', true),
       supabase.from('attendance_config').select('*').limit(1).maybeSingle(),
     ]);
     setMarks(m.data || []);
@@ -64,10 +64,22 @@ export default function AdminReports() {
   // Group marks by employee → day with entrada/salida + computed delay
   const employees = useMemo(() => {
     const byUser = {};
-    for (const u of personal) byUser[u.id] = { id: u.id, nombre: u.nombre, email: u.email, days: {} };
+    for (const u of personal) byUser[u.id] = {
+      id: u.id, nombre: u.nombre, email: u.email,
+      cedula: u.cedula, cargo: u.cargo,
+      hora_entrada: u.hora_entrada?.slice?.(0, 5) || cfg.hora_entrada,
+      hora_salida: u.hora_salida?.slice?.(0, 5) || cfg.hora_salida,
+      days: {},
+    };
     for (const m of marks) {
       const key = m.user_id;
-      if (!byUser[key]) byUser[key] = { id: key, nombre: m.profiles?.nombre || '—', email: m.profiles?.email || '—', days: {} };
+      if (!byUser[key]) byUser[key] = {
+        id: key, nombre: m.profiles?.nombre || '—', email: m.profiles?.email || '—',
+        cedula: m.profiles?.cedula, cargo: m.profiles?.cargo,
+        hora_entrada: m.profiles?.hora_entrada?.slice?.(0, 5) || cfg.hora_entrada,
+        hora_salida: m.profiles?.hora_salida?.slice?.(0, 5) || cfg.hora_salida,
+        days: {},
+      };
       const day = (byUser[key].days[m.fecha] ||= { fecha: m.fecha });
       const enriched = { ...m, delay: computeMarkDelay(m, cfg) };
       if (m.tipo === 'entrada') { if (!day.entrada) day.entrada = enriched; }
@@ -114,7 +126,7 @@ export default function AdminReports() {
         return [cellStyles.bold, cellStyles.greenLight, cellStyles.blueLight, cellStyles.bold, '', '', lateStyle];
       });
       return {
-        title: `${emp.nombre} · ${emp.email}  ·  Total trabajado: ${totalH}`,
+        title: `${emp.nombre}${emp.cedula ? ` · CI ${emp.cedula}` : ''} · ${emp.email}  ·  Jornada ${emp.hora_entrada}–${emp.hora_salida}  ·  Total: ${totalH}`,
         headerColor: '#D4AF37',
         headers: ['Fecha', 'Entrada', 'Salida', 'Trabajado', 'Ubicación', 'Coords', 'Estado'],
         rows,

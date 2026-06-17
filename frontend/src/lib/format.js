@@ -50,22 +50,40 @@ export function minutesToText(m) {
 }
 
 /**
- * Compute mark delay in minutes, comparing the mark's hora against the
- * configured schedule. Returns positive integer minutes if late, 0 otherwise.
- * Falls back to mark.retraso_minutos if cfg is missing.
+ * Compute mark delay in minutes. Prefers per-employee schedule from
+ * mark.profiles (hora_entrada/hora_salida) if present, otherwise falls
+ * back to the provided global cfg.
  */
 export function computeMarkDelay(mark, cfg) {
   if (!mark) return 0;
-  if (!cfg) return mark.retraso_minutos || 0;
-  const targetHHMM = mark.tipo === 'entrada' ? cfg.hora_entrada : cfg.hora_salida;
+  // Per-employee schedule wins
+  const empEntrada = mark.profiles?.hora_entrada;
+  const empSalida = mark.profiles?.hora_salida;
+  const effective = {
+    hora_entrada: empEntrada || cfg?.hora_entrada,
+    hora_salida: empSalida || cfg?.hora_salida,
+    tolerancia_minutos: cfg?.tolerancia_minutos ?? 0,
+  };
+  const targetHHMM = mark.tipo === 'entrada' ? effective.hora_entrada : effective.hora_salida;
   if (!targetHHMM || !mark.hora) return mark.retraso_minutos || 0;
   const [th, tm] = String(targetHHMM).slice(0, 5).split(':').map(Number);
   const [mh, mm] = String(mark.hora).slice(0, 5).split(':').map(Number);
   const delta = (mh * 60 + mm) - (th * 60 + tm);
   if (mark.tipo === 'entrada') {
-    const tol = Number(cfg.tolerancia_minutos ?? 0);
+    const tol = Number(effective.tolerancia_minutos ?? 0);
     return delta > tol ? delta : 0;
   }
   // salida — late only if after the scheduled exit hour
   return delta > 0 ? delta : 0;
+}
+
+/**
+ * Get effective schedule for a profile (with global fallback).
+ */
+export function effectiveSchedule(profile, cfg) {
+  return {
+    hora_entrada: profile?.hora_entrada?.slice?.(0, 5) || cfg?.hora_entrada || '08:00',
+    hora_salida: profile?.hora_salida?.slice?.(0, 5) || cfg?.hora_salida || '17:00',
+    tolerancia_minutos: cfg?.tolerancia_minutos ?? 10,
+  };
 }

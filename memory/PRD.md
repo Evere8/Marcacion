@@ -154,3 +154,28 @@ Sistema profesional de marcación de personal (PWA + Supabase + Vercel) con marc
 - Si admin crea tareas asignadas (flujo viejo de "Tareas"), TODO sigue funcionando con chat + estados.
 - El Excel exportado es realmente HTML con MIME `application/vnd.ms-excel` — abre perfecto en Excel/LibreOffice/Sheets y conserva colores.
 
+
+---
+
+## Sesión Feb 2026 (c) — Horarios por empleado + Cargo + Cronómetro de tareas
+
+### Implementado
+- **SQL** `/app/supabase/14_personal_schedule_cargo.sql`:
+  - `profiles` ← `cedula`, `hora_entrada`, `hora_salida`, `cargo` ('chofer'|'administracion').
+  - `trabajos` ← `iniciado_en`, `finalizado_en`, `duracion_segundos` (calculado por trigger).
+- **`admin/Personal.jsx`**: nuevos inputs en crear/editar (Cédula · Cargo · Hora entrada · Hora salida). Las cards muestran badge cargo + horario + cédula.
+- **`format.js`**: `computeMarkDelay` ahora prefiere `mark.profiles.hora_entrada/salida` y cae al global si no existe. Nueva helper `effectiveSchedule()`.
+- **Dashboard.jsx**: el reporte del día compara cada empleado contra SU horario.
+- **Reports.jsx**: query trae `hora_entrada/hora_salida/cedula/cargo` y se incluye el horario individual en el título de cada sección Excel.
+- **`staff/Home.jsx`**: para usuarios con `cargo='chofer'` aparece sección **Trabajos / Cronómetro**:
+  - Si hay trabajo en curso → card verde con cronómetro grande + botón **Finalizar** rojo.
+  - Si hay trabajos cargados sin iniciar → cada uno con botón **Iniciar** (verde, más chico que el botón de marcación).
+  - Lista de finalizados del día con duración.
+- **`admin/Trabajos.jsx`**: nueva columna **Duración viaje** (verde-pulse si en curso, azul si finalizado).
+- **Excel de trabajos**: columnas Inicio · Fin · Duración + resumen general con tiempo total.
+
+### Pasos que TÚ tenés que ejecutar
+1. **Supabase SQL Editor** → ejecutar `/app/supabase/14_personal_schedule_cargo.sql` (UNA vez).
+2. Editar el perfil de cada empleado y poner su horario de entrada/salida + cédula + cargo.
+3. Push a GitHub → redeploy Vercel.
+
