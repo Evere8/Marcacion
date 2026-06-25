@@ -179,3 +179,22 @@ Sistema profesional de marcación de personal (PWA + Supabase + Vercel) con marc
 2. Editar el perfil de cada empleado y poner su horario de entrada/salida + cédula + cargo.
 3. Push a GitHub → redeploy Vercel.
 
+
+---
+
+## Sesión Jun 2026 — Gestor de Cargos + Ausentes en reportes
+
+### Implementado (frontend, sin SQL nuevo)
+- **`admin/Config.jsx`** — Sección "Cargos del personal": el admin puede agregar/eliminar cargos y togglear `con_cronometro` por cargo (usa tabla `cargos` de `15_cargos.sql`). data-testids: `admin-config-cargos`, `cargo-row-*`, `cargo-cron-*`, `cargo-del-*`, `cargo-new-name`, `cargo-new-cron`, `cargo-add`.
+- **Función AUSENTE** — Cuando un empleado NO marca un día hábil de Paraguay (Lun-Vie, fecha <= hoy) aparece como "Ausente" (rojo):
+  - `lib/format.js`: helpers `isWorkingDayPY(dateStr)` y `eachDayISO(from,to)`.
+  - `admin/Reports.jsx`: inyecta días hábiles sin marca como `{ausente:true}`, badge rojo "Ausente" en tabla, contador "Ausencias" por empleado, y columna AUSENTE en Excel.
+  - `lib/reportPdf.js`: estado "AUSENTE" en rojo en el PDF.
+- NO requiere ejecutar SQL nuevo (lógica 100% cliente).
+
+### Verificación
+- Compila sin errores (solo warnings eslint preexistentes).
+- NO se pudo verificar visualmente autenticado: el login a Supabase devuelve HTTP 400 (credenciales richy@gmail.com/richy123 rechazadas por la instancia del usuario). Pendiente que el usuario confirme credenciales válidas.
+
+### Scripts SQL a ejecutar en Supabase (en orden, UNA vez c/u)
+12_staff_tasks_admin_tools.sql · 13_trabajos.sql · 14_personal_schedule_cargo.sql · 15_cargos.sql

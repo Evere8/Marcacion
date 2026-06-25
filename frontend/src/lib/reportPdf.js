@@ -77,6 +77,7 @@ export async function buildAttendancePdf({ title, dateLabel, schedule, employees
     for (const day of emp.days) {
       const e = day.entrada;
       const s = day.salida;
+      const estado = day.ausente ? 'AUSENTE' : (e ? (e.delay > 0 ? `+${e.delay}m` : 'A tiempo') : 'Sin marcar');
       rows.push([
         day.fecha,
         e ? fmtTime(e.hora) : '—',
@@ -85,7 +86,7 @@ export async function buildAttendancePdf({ title, dateLabel, schedule, employees
         (e?.direccion_geolocalizada || s?.direccion_geolocalizada || '—').slice(0, 60),
         e?.latitud != null ? `${e.latitud.toFixed(5)},${e.longitud.toFixed(5)}` : (s?.latitud != null ? `${s.latitud.toFixed(5)},${s.longitud.toFixed(5)}` : '—'),
         (e?.foto_url ? '✔' : '') + (s?.foto_url ? ' / ✔' : ''),
-        e?.delay > 0 ? `+${e.delay}m` : 'A tiempo',
+        estado,
       ]);
     }
 
@@ -99,7 +100,10 @@ export async function buildAttendancePdf({ title, dateLabel, schedule, employees
       margin: { left: 30, right: 30 },
       didParseCell: (data) => {
         if (data.section === 'body' && data.column.index === 7) {
-          if (String(data.cell.raw).startsWith('+')) data.cell.styles.textColor = [200, 50, 50];
+          const raw = String(data.cell.raw);
+          if (raw === 'AUSENTE') { data.cell.styles.textColor = [200, 50, 50]; data.cell.styles.fontStyle = 'bold'; }
+          else if (raw.startsWith('+')) data.cell.styles.textColor = [200, 50, 50];
+          else if (raw === 'Sin marcar') data.cell.styles.textColor = [120, 120, 120];
           else data.cell.styles.textColor = [40, 130, 60];
         }
       },

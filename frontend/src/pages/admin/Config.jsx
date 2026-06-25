@@ -5,7 +5,7 @@ import { useSystemConfig } from '../../contexts/SystemConfigContext';
 import { uploadSystemAsset } from '../../lib/upload';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
-import { Loader2, Save, Clock, Palette, User as UserIcon, Image as ImgIcon, Bell, Briefcase, Plus, Trash2, X } from 'lucide-react';
+import { Loader2, Save, Clock, Palette, User as UserIcon, Image as ImgIcon, Bell, Briefcase, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { PushToggle } from '../../components/PushPrompt';
 import { Switch } from '../../components/ui/switch';
@@ -27,6 +27,39 @@ export default function Config() {
   const [email, setEmail] = useState(profile?.email || '');
   const [newPass, setNewPass] = useState('');
   const [adminNombre, setAdminNombre] = useState(profile?.nombre || '');
+
+  const [cargos, setCargos] = useState([]);
+  const [nuevoCargo, setNuevoCargo] = useState('');
+  const [nuevoCron, setNuevoCron] = useState(false);
+
+  async function loadCargos() {
+    const { data } = await supabase.from('cargos').select('*').order('orden');
+    setCargos(data || []);
+  }
+  useEffect(() => { loadCargos(); }, []);
+
+  async function addCargo() {
+    const nombre = nuevoCargo.trim().toLowerCase();
+    if (!nombre) { toast.error('Escribe un nombre de cargo'); return; }
+    const orden = (cargos.length ? Math.max(...cargos.map((c) => c.orden || 0)) : 0) + 10;
+    const { error } = await supabase.from('cargos').insert({ nombre, con_cronometro: nuevoCron, orden });
+    if (error) { toast.error(error.message); return; }
+    setNuevoCargo(''); setNuevoCron(false);
+    toast.success('Cargo agregado');
+    loadCargos();
+  }
+  async function toggleCron(c) {
+    const { error } = await supabase.from('cargos').update({ con_cronometro: !c.con_cronometro }).eq('id', c.id);
+    if (error) { toast.error(error.message); return; }
+    setCargos((prev) => prev.map((x) => (x.id === c.id ? { ...x, con_cronometro: !c.con_cronometro } : x)));
+  }
+  async function delCargo(c) {
+    if (!window.confirm(`Eliminar el cargo "${c.nombre}"?`)) return;
+    const { error } = await supabase.from('cargos').delete().eq('id', c.id);
+    if (error) { toast.error(error.message); return; }
+    toast.success('Cargo eliminado');
+    loadCargos();
+  }
 
   useEffect(() => {
     (async () => {
@@ -150,6 +183,43 @@ export default function Config() {
           </div>
         </header>
         <PushToggle />
+      </section>
+
+      <section className="card-premium p-6 fade-up" data-testid="admin-config-cargos">
+        <header className="flex items-center gap-3 mb-5">
+          <div className="w-10 h-10 rounded-xl bg-gold/15 text-gold grid place-items-center"><Briefcase className="w-4 h-4" /></div>
+          <div>
+            <p className="label-eyebrow">Roles</p>
+            <h2 className="text-lg font-black">Cargos del personal</h2>
+            <p className="text-xs text-zinc-500 mt-0.5">Activa "Cronómetro" para que ese cargo pueda iniciar/finalizar trabajos midiendo el tiempo de viaje.</p>
+          </div>
+        </header>
+
+        <div className="space-y-2 mb-4">
+          {cargos.map((c) => (
+            <div key={c.id} className="flex items-center gap-3 rounded-xl bg-panel border border-white/10 px-4 py-3" data-testid={`cargo-row-${c.id}`}>
+              <span className="flex-1 font-bold capitalize">{c.nombre}</span>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] uppercase tracking-wider text-zinc-500">Cronómetro</span>
+                <Switch checked={!!c.con_cronometro} onCheckedChange={() => toggleCron(c)} data-testid={`cargo-cron-${c.id}`} />
+              </div>
+              <button onClick={() => delCargo(c)} className="btn-ghost !px-2 !py-1.5 hover:!bg-red-500/10 hover:!text-red-400" data-testid={`cargo-del-${c.id}`} aria-label="Eliminar"><Trash2 className="w-3.5 h-3.5" /></button>
+            </div>
+          ))}
+          {cargos.length === 0 && <p className="text-sm text-zinc-500 py-2">Aún no hay cargos. Agrega el primero abajo. (¿Ejecutaste <span className="text-gold font-bold">15_cargos.sql</span> en Supabase?)</p>}
+        </div>
+
+        <div className="flex items-end gap-3 flex-wrap border-t border-white/5 pt-4">
+          <div className="flex-1 min-w-[160px]">
+            <Label className="label-eyebrow mb-2 block">Nuevo cargo</Label>
+            <Input value={nuevoCargo} onChange={(e) => setNuevoCargo(e.target.value)} placeholder="ej. deposito" className="bg-panel border-white/10 h-11 rounded-xl" data-testid="cargo-new-name" />
+          </div>
+          <div className="flex items-center gap-2 h-11">
+            <span className="text-[10px] uppercase tracking-wider text-zinc-500">Cronómetro</span>
+            <Switch checked={nuevoCron} onCheckedChange={setNuevoCron} data-testid="cargo-new-cron" />
+          </div>
+          <button onClick={addCargo} disabled={busy} className="btn-gold flex items-center gap-2 h-11" data-testid="cargo-add"><Plus className="w-4 h-4" /> Agregar</button>
+        </div>
       </section>
     </div>
   );

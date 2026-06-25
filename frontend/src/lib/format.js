@@ -78,6 +78,31 @@ export function computeMarkDelay(mark, cfg) {
 }
 
 /**
+ * ¿La fecha (YYYY-MM-DD) es un día hábil en Paraguay? (Lunes a Viernes)
+ */
+export function isWorkingDayPY(dateStr) {
+  if (!dateStr) return false;
+  const d = new Date(dateStr + 'T12:00:00');
+  const day = d.getDay(); // 0=Dom … 6=Sáb
+  return day >= 1 && day <= 5;
+}
+
+/**
+ * Lista de fechas ISO (YYYY-MM-DD) entre fromISO y toISO inclusive.
+ */
+export function eachDayISO(fromISO, toISO) {
+  const out = [];
+  if (!fromISO || !toISO) return out;
+  const cur = new Date(fromISO + 'T12:00:00');
+  const end = new Date(toISO + 'T12:00:00');
+  while (cur <= end) {
+    out.push(cur.toLocaleDateString('en-CA'));
+    cur.setDate(cur.getDate() + 1);
+  }
+  return out;
+}
+
+/**
  * Get effective schedule for a profile (with global fallback).
  */
 export function effectiveSchedule(profile, cfg) {

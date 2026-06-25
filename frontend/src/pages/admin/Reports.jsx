@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import { Loader2, FileText, Send, Download, MapPin, Camera, Clock, FileSpreadsheet, Calendar } from 'lucide-react';
-import { formatTime, formatDateEs, todayISO, computeMarkDelay, minutesToText } from '../../lib/format';
+import { formatTime, formatDateEs, todayISO, computeMarkDelay, minutesToText, isWorkingDayPY, eachDayISO } from '../../lib/format';
 import { mapsUrl } from '../../lib/gps';
 import { deleteMarkPhoto } from '../../lib/upload';
 import { buildAttendancePdf, sharePdf } from '../../lib/reportPdf';
@@ -85,11 +85,24 @@ export default function AdminReports() {
       if (m.tipo === 'entrada') { if (!day.entrada) day.entrada = enriched; }
       else day.salida = enriched;
     }
-    return Object.values(byUser).map((u) => ({
-      ...u,
-      days: Object.values(u.days).sort((a, b) => (a.fecha < b.fecha ? 1 : -1)),
-    }));
-  }, [marks, personal, cfg]);
+    return Object.values(byUser).map((u) => {
+      // Inyectar días hábiles (Lun-Vie) sin marcación como "Ausente".
+      const dayMap = u.days;
+      const today = todayISO();
+      const fromISO = rangeFromISO();
+      const toISO = rangeToISO();
+      for (const d of eachDayISO(fromISO, toISO)) {
+        if (d > today) continue;            // no marcar futuro
+        if (!isWorkingDayPY(d)) continue;   // solo días hábiles
+        if (!dayMap[d]) dayMap[d] = { fecha: d, ausente: true };
+      }
+      return {
+        ...u,
+        days: Object.values(dayMap).sort((a, b) => (a.fecha < b.fecha ? 1 : -1)),
+      };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [marks, personal, cfg, range, customFrom, customTo]);
 
   function workedFor(e, s) {
     if (!e || !s) return null;
@@ -109,7 +122,7 @@ export default function AdminReports() {
       const rows = emp.days.map((d) => {
         const e = d.entrada, s = d.salida, wm = workedFor(e, s);
         const ref = e || s;
-        const lateLabel = e ? (e.delay > 0 ? `+${e.delay}m` : 'A tiempo') : 'Sin marcar';
+        const lateLabel = d.ausente ? 'AUSENTE' : e ? (e.delay > 0 ? `+${e.delay}m` : 'A tiempo') : 'Sin marcar';
         return [
           d.fecha,
           e ? e.hora?.slice(0, 5) : '—',
@@ -122,11 +135,12 @@ export default function AdminReports() {
       });
       const styles = emp.days.map((d) => {
         const e = d.entrada;
-        const lateStyle = !e ? cellStyles.redLight : (e.delay > 0 ? cellStyles.redLight : cellStyles.greenLight);
+        const lateStyle = d.ausente ? cellStyles.redLight : !e ? cellStyles.redLight : (e.delay > 0 ? cellStyles.redLight : cellStyles.greenLight);
         return [cellStyles.bold, cellStyles.greenLight, cellStyles.blueLight, cellStyles.bold, '', '', lateStyle];
       });
+      const ausencias = emp.days.filter((d) => d.ausente).length;
       return {
-        title: `${emp.nombre}${emp.cedula ? ` · CI ${emp.cedula}` : ''} · ${emp.email}  ·  Jornada ${emp.hora_entrada}–${emp.hora_salida}  ·  Total: ${totalH}`,
+        title: `${emp.nombre}${emp.cedula ? ` · CI ${emp.cedula}` : ''} · ${emp.email}  ·  Jornada ${emp.hora_entrada}–${emp.hora_salida}  ·  Total: ${totalH}  ·  Ausencias: ${ausencias}`,
         headerColor: '#D4AF37',
         headers: ['Fecha', 'Entrada', 'Salida', 'Trabajado', 'Ubicación', 'Coords', 'Estado'],
         rows,
@@ -270,6 +284,7 @@ export default function AdminReports() {
       {!loading && employees.map((emp) => {
         const totalMin = emp.days.reduce((acc, d) => acc + (workedFor(d.entrada, d.salida) || 0), 0);
         const totalH = `${Math.floor(totalMin / 60)}h ${totalMin % 60}m`;
+        const ausencias = emp.days.filter((d) => d.ausente).length;
         return (
           <section key={emp.id} className="card-premium p-5 fade-up" data-testid={`report-emp-${emp.id}`}>
             <header className="flex items-center justify-between gap-3 mb-4 flex-wrap">
@@ -282,6 +297,10 @@ export default function AdminReports() {
                 <div className="rounded-xl border border-gold/30 bg-gold/5 px-3 py-2 text-center">
                   <p className="text-[10px] uppercase tracking-wider text-gold">Total trabajado</p>
                   <p className="text-lg font-black gold-gradient-text">{totalH}</p>
+                </div>
+                <div className={`rounded-xl border px-3 py-2 text-center ${ausencias > 0 ? 'border-red-500/30 bg-red-500/5' : 'border-white/10 bg-white/5'}`} data-testid={`report-ausencias-${emp.id}`}>
+                  <p className={`text-[10px] uppercase tracking-wider ${ausencias > 0 ? 'text-red-400' : 'text-zinc-500'}`}>Ausencias</p>
+                  <p className={`text-lg font-black ${ausencias > 0 ? 'text-red-300' : 'text-zinc-400'}`}>{ausencias}</p>
                 </div>
                 <button
                   onClick={() => generateAndShare(emp.id, 'download')}
@@ -331,8 +350,8 @@ export default function AdminReports() {
                     const e = d.entrada;
                     const s = d.salida;
                     const wm = workedFor(e, s);
-                    const lateLabel = e ? (e.delay > 0 ? `+${minutesToText(e.delay)}` : 'A tiempo') : 'Sin marcar';
-                    const lateClass = !e ? 'bg-zinc-500/15 text-zinc-400' : e.delay > 0 ? 'bg-red-500/15 text-red-300' : 'bg-green-500/15 text-green-300';
+                    const lateLabel = d.ausente ? 'Ausente' : e ? (e.delay > 0 ? `+${minutesToText(e.delay)}` : 'A tiempo') : 'Sin marcar';
+                    const lateClass = d.ausente ? 'bg-red-500/15 text-red-300' : !e ? 'bg-zinc-500/15 text-zinc-400' : e.delay > 0 ? 'bg-red-500/15 text-red-300' : 'bg-green-500/15 text-green-300';
                     const ref = e || s;
                     return (
                       <tr key={d.fecha} className="border-t border-white/5 hover:bg-white/[0.02]">
