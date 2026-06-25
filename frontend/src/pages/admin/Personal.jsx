@@ -12,10 +12,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { toast } from 'sonner';
 import { Avatar } from './Dashboard';
 
-const empty = { id: null, nombre: '', edad: '', telefono: '', direccion: '', email: '', password: '', foto_perfil: '', activo: true, cedula: '', cargo: 'chofer', hora_entrada: '08:00', hora_salida: '17:00' };
+const empty = { id: null, nombre: '', edad: '', telefono: '', direccion: '', email: '', password: '', foto_perfil: '', activo: true, cedula: '', cargo: '', hora_entrada: '08:00', hora_salida: '17:00' };
 
 export default function Personal() {
   const [list, setList] = useState([]);
+  const [cargos, setCargos] = useState([]);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(empty);
   const [file, setFile] = useState(null);
@@ -26,8 +27,12 @@ export default function Personal() {
   const [pwdSaving, setPwdSaving] = useState(false);
 
   async function load() {
-    const { data } = await supabase.from('profiles').select('*').eq('rol', 'personal').order('created_at', { ascending: false });
+    const [{ data }, { data: cg }] = await Promise.all([
+      supabase.from('profiles').select('*').eq('rol', 'personal').order('created_at', { ascending: false }),
+      supabase.from('cargos').select('*').order('orden'),
+    ]);
     setList(data || []);
+    setCargos(cg || []);
   }
   useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
   useRealtime('admin_personal', (ch) => {
@@ -84,7 +89,7 @@ export default function Personal() {
           rol: 'personal',
           activo: true,
           cedula: form.cedula || null,
-          cargo: form.cargo || 'chofer',
+          cargo: form.cargo || cargos[0]?.nombre || 'chofer',
           hora_entrada: form.hora_entrada || null,
           hora_salida: form.hora_salida || null,
         });
@@ -102,7 +107,7 @@ export default function Personal() {
           direccion: form.direccion || null,
           foto_perfil: avatar,
           cedula: form.cedula || null,
-          cargo: form.cargo || 'chofer',
+          cargo: form.cargo || cargos[0]?.nombre || null,
           hora_entrada: form.hora_entrada || null,
           hora_salida: form.hora_salida || null,
         }).eq('id', form.id);
@@ -169,11 +174,15 @@ export default function Personal() {
                 <p className="font-bold text-white truncate group-hover:text-gold transition-colors">{p.nombre}</p>
                 <p className="text-xs text-zinc-500 truncate">{p.email}</p>
                 <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                  {p.cargo && (
-                    <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-md border ${p.cargo === 'chofer' ? 'bg-amber-500/10 text-amber-300 border-amber-500/30' : 'bg-sky-500/10 text-sky-300 border-sky-500/30'}`}>
-                      {p.cargo === 'chofer' ? '🚚 Chofer' : '🧑‍💼 Admin'}
-                    </span>
-                  )}
+                  {p.cargo && (() => {
+                    const c = cargos.find((x) => x.nombre?.toLowerCase() === p.cargo?.toLowerCase());
+                    const cron = c?.con_cronometro;
+                    return (
+                      <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-md border ${cron ? 'bg-amber-500/10 text-amber-300 border-amber-500/30' : 'bg-sky-500/10 text-sky-300 border-sky-500/30'}`}>
+                        {cron ? '⏱ ' : ''}{p.cargo}
+                      </span>
+                    );
+                  })()}
                   {(p.hora_entrada || p.hora_salida) && (
                     <span className="text-[10px] text-zinc-500">⏱ {p.hora_entrada?.slice(0, 5) || '—'}–{p.hora_salida?.slice(0, 5) || '—'}</span>
                   )}
@@ -215,11 +224,20 @@ export default function Personal() {
             <Field label="Cédula" value={form.cedula} onChange={(v) => setForm({ ...form, cedula: v })} testId="form-cedula" />
             <div>
               <Label className="label-eyebrow mb-2 block">Cargo</Label>
-              <Select value={form.cargo || 'chofer'} onValueChange={(v) => setForm({ ...form, cargo: v })}>
+              <Select value={form.cargo || (cargos[0]?.nombre || 'chofer')} onValueChange={(v) => setForm({ ...form, cargo: v })}>
                 <SelectTrigger className="bg-panel border-white/10 h-11 rounded-xl" data-testid="form-cargo"><SelectValue /></SelectTrigger>
                 <SelectContent className="bg-surface border-white/10">
-                  <SelectItem value="chofer">🚚 Chofer</SelectItem>
-                  <SelectItem value="administracion">🧑‍💼 Administración</SelectItem>
+                  {cargos.length === 0 && (
+                    <>
+                      <SelectItem value="chofer">🚚 Chofer</SelectItem>
+                      <SelectItem value="administracion">🧑‍💼 Administración</SelectItem>
+                    </>
+                  )}
+                  {cargos.map((c) => (
+                    <SelectItem key={c.id} value={c.nombre}>
+                      {c.con_cronometro ? '⏱ ' : ''}{c.nombre}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>

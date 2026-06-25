@@ -5,9 +5,10 @@ import { useSystemConfig } from '../../contexts/SystemConfigContext';
 import { uploadSystemAsset } from '../../lib/upload';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
-import { Loader2, Save, Clock, Palette, User as UserIcon, Image as ImgIcon, Bell } from 'lucide-react';
+import { Loader2, Save, Clock, Palette, User as UserIcon, Image as ImgIcon, Bell, Briefcase, Plus, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { PushToggle } from '../../components/PushPrompt';
+import { Switch } from '../../components/ui/switch';
 
 export default function Config() {
   const { user, profile, refreshProfile } = useAuth();

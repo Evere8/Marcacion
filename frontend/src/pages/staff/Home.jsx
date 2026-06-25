@@ -20,25 +20,35 @@ export default function StaffHome() {
   const [pendings, setPendings] = useState([]);
   const [trabajos, setTrabajos] = useState([]);
   const [cfg, setCfg] = useState({ hora_entrada: '08:00', hora_salida: '17:00' });
+  const [cargos, setCargos] = useState([]);
   const [now, setNow] = useState(new Date());
 
-  const isChofer = (profile?.cargo || 'chofer') === 'chofer';
+  // El cronómetro se muestra si el cargo del usuario tiene `con_cronometro=true`.
+  // Si todavía no se aplicó la SQL de cargos o el usuario no tiene cargo, se
+  // asume "chofer" por compatibilidad.
+  const userCargo = (profile?.cargo || '').toLowerCase();
+  const cargoRec = cargos.find((c) => c.nombre?.toLowerCase() === userCargo);
+  const tieneCronometro = cargoRec
+    ? !!cargoRec.con_cronometro
+    : (userCargo === 'chofer' || !userCargo);
   const userEntrada = profile?.hora_entrada?.slice?.(0, 5) || cfg.hora_entrada;
   const userSalida = profile?.hora_salida?.slice?.(0, 5) || cfg.hora_salida;
 
   async function load() {
     const today = todayISO();
-    const [m, t, c, ch, tr] = await Promise.all([
+    const [m, t, c, ch, tr, cg] = await Promise.all([
       supabase.from('marks').select('*').eq('user_id', user.id).eq('fecha', today).order('created_at'),
       supabase.from('tasks').select('*').eq('assignee_id', user.id).neq('estado', 'completada').order('urgencia', { ascending: false }),
       supabase.from('attendance_config').select('*').limit(1).maybeSingle(),
       supabase.from('checklists').select('*').eq('user_id', user.id).eq('fecha', today).eq('completado', false).order('created_at'),
       supabase.from('trabajos').select('*').eq('user_id', user.id).eq('fecha', today).order('created_at', { ascending: false }),
+      supabase.from('cargos').select('*').order('orden'),
     ]);
     setTodayMarks(m.data || []);
     setTasks(t.data || []);
     setPendings(ch.data || []);
     setTrabajos(tr.data || []);
+    setCargos(cg.data || []);
     if (c.data) setCfg({ hora_entrada: c.data.hora_entrada?.slice(0, 5), hora_salida: c.data.hora_salida?.slice(0, 5) });
   }
 
@@ -168,8 +178,8 @@ export default function StaffHome() {
         )}
       </div>
 
-      {/* TRABAJOS / CRONÓMETRO (solo para choferes) */}
-      {isChofer && (
+      {/* TRABAJOS / CRONÓMETRO (solo cargos con con_cronometro=true) */}
+      {tieneCronometro && (
         <section data-testid="staff-home-trabajos">
           <div className="flex items-center justify-between mb-3">
             <div>

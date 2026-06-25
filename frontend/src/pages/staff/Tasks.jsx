@@ -16,6 +16,11 @@ function todayPY() {
   return fmt.format(new Date()); // YYYY-MM-DD
 }
 
+function nowPY_HHMMSS() {
+  const fmt = new Intl.DateTimeFormat('en-GB', { timeZone: 'America/Asuncion', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+  return fmt.format(new Date());
+}
+
 const emptyForm = { id: null, detalle: '', cantidad: '' };
 
 export default function StaffTrabajos() {
@@ -83,9 +88,13 @@ export default function StaffTrabajos() {
           user_id: user.id,
           detalle: form.detalle.trim(),
           cantidad: cantNum,
+          fecha: todayPY(),
+          hora: nowPY_HHMMSS(),
         });
         if (error) throw error;
         toast.success('Trabajo registrado');
+        // Si el usuario está filtrando otra fecha, saltar a HOY para que vea su nuevo trabajo
+        if (dateFilter !== todayPY()) setDateFilter(todayPY());
       }
       setOpen(false); setForm(emptyForm); load();
     } catch (e) { toast.error(e.message || 'Error'); } finally { setSaving(false); }
