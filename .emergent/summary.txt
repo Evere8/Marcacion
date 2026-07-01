@@ -7,80 +7,70 @@ PRODUCT REQUIREMENTS:
 - ALFATWIN premium dark UI design.
 - Accurate GPS tracking during clock-ins con validación de horarios y reportes en PDF y Excel.
 
-**User's preferred language**: Spanish (The user speaks EXCLUSIVAMENTE en español. You MUST INSTRUCT the next agent to respond in the user's preferred language only: ESPAÑOL).
+**User's preferred language**: Spanish (The user EXCLUSIVELY speaks Spanish. You MUST automatically detect this and INSTRUCT the next agent to respond in **ESPAÑOL** only).
 
 **what currently exists?** 
-A React PWA connected to Supabase. The app features GPS clock-ins, Task management, PDF/Excel Reports, and Web Push notifications. Recently added: Admin capability to change staff passwords, a new  entity for driver tasks (with text detail and numeric quantity), individual schedules (/) per staff profile, Excel  HTML Blob exports, and a dynamic Cargos (Roles) system where specific roles can trigger a stopwatch (cronómetro) for their tasks.
+A React PWA connected to Supabase. Features include GPS clock-ins, Task management, PDF/Excel Reports, and Web Push notifications. The app now includes dynamic Cargos (roles) management in the Admin panel, a client-side Ausente calculation for unclocked Paraguayan business days (shows in UI, PDF, and Excel), and a driver tasks system ().
 
 **Last working item**: 
-    - Last item agent was working: Fixing a bug where newly created driver tasks were not showing up in the UI (by forcing explicit client-side /), and implementing a dynamic  (roles) manager in . The agent had just applied the  changes to  to render the new roles table when the session ended.
+    - Last item agent was working: Debugging a critical bug where  (tasks) created by staff/chofer () are not showing up for the admin. The agent investigated via bash/curl and found that the  table is entirely empty (), meaning the frontend insert is either failing silently or being blocked by Supabase RLS.
     - Status: IN PROGRESS
-    - Agent Testing Done: N
-    - Which testing method agent to use? screenshot tool (for frontend UI changes in Config and Home)
+    - Agent Testing Done: N (Attempted bash test but failed due to syntax error).
+    - Which testing method agent to use? testing_agent (MANDATORY per system reminder after applying the bug fix).
     - User Testing Done: N
 
 **All Pending/In progress Issue list**:  
-  Issue 1: Tareas/Trabajos not showing in UI and missing stopwatch (P0)
-     - Attempted fixes: Agent updated  to send explicit ISO strings for dates to prevent timezone/default mismatches. Updated  to rely on the  flag instead of a hardcoded chofer string.
+  Issue 1: Tareas/Trabajos created by staff are not persisting to the database and not showing for admin (P0)
+     - Attempted fixes: The previous agent verified the table is empty via curl using the new admin credentials. Attempted a test insert via bash script but failed due to a  error in bash.
      - Next debug checklist: 
-        - Verify if creating a task in the staff profile now properly lists it.
-        - Verify if the  UI correctly renders the stopwatch for a user whose role has .
-     - Why fix this issue and what will be achieved with the fix?: Core functionality requested by user; driver tasks must show up and have start/stop functionality.
-     - Status: TESTING PENDING
-     - Is recurring issue?: N
-     - Should Test frontend/backend/both after fix?: Frontend
-     - Blocked on other issue: User MUST execute  in Supabase first.
+        - Check the frontend insert payload in  or wherever  are created. Is it failing silently?
+        - Check  for RLS issues. Ensure  policies allow the user to insert their own records.
+        - Fix the insert logic and verify the network call succeeds.
+     - Why fix this issue and what will be achieved with the fix?: Core functionality; staff/drivers must be able to submit their work and admins must be able to view it.
+     - Status: IN PROGRESS
+     - Is recurring issue?: Y (Variant of the previous task visibility bug).
+     - Should Test frontend/backend/both after fix?: Both (Must use ).
+     - Blocked on other issue: None.
 
 **In progress Task List**: 
-  Task 1: Dynamic Cargos (Roles) in Config (P0)
-     - Where to resume: Run linting and a smoke test to ensure , , and  render correctly after the last  edits. 
-     - What will be achieved with this?: Admins can dynamically add/edit roles (e.g., chofer, administracion, deposito) and toggle if that role requires a task stopwatch.
-     - Status: TESTING PENDING
-     - Should Test frontend/backend/both after fix?: Frontend (Screenshot tool)
-     - Blocked on something: Needs user to execute the newly created SQL scripts.
+  None actively in progress (dynamic Cargos and Ausentes were finished but might need functional E2E smoke tests).
 
 **Upcoming and Future Tasks**
-  Task 1: Scheduled Push Notifications for Checklists (10 mins before & exact time) (P1) - Needs verification if  setup from a previous session is working for the user.
+  Task 1: Scheduled Push Notifications for Checklists (10 mins before & exact time) (P1) - Needs verification if  setup is working for the user.
   Task 2: Advanced Offline Caching (P2) - Expand PWA Service Worker to handle offline data mutations syncing (marcaciones sin internet).
-  Task 3: Automated E2E Testing (P2) - Use  over the full flow (Clock-ins, Excel generation, Tasks).
+  Task 3: Automated E2E Testing (P2) - Full flow (Clock-ins, Excel generation, Tasks).
 
 **Completed work in this session**
--  configuration added to fix monorepo Vercel build issues (DONE).
-- : Admin can change staff passwords and create admins (DONE).
--  & Trabajos UI: New driver tasks with description and quantity, replacing old tasks in staff view (DONE).
-- : Direct Excel export utilizing HTML tables saved as  for colors/formatting (DONE).
-- : Individual  and  added to staff profiles, used to compute late minutes in reports (DONE).
-- : Dynamic roles system replacing hardcoded strings (DONE - code written, needs test).
+- Added Ausente feature for employees who don't clock in on Paraguayan business days (Mon-Fri) - reflected in UI, PDF, and Excel exports (DONE).
+- Dynamic Cargos (Roles) UI section completed in  with CRUD functionality and Stopwatch toggles (DONE).
+-  updated with recent changes (DONE).
 
 **Earlier issues found/mentioned but not fixed**
-None. Vercel deployment issue was addressed by creating  and instructing the user not to use a sub-directory in Vercel settings.
+None.
 
 **Known issue recurrence from previous fork**
   - Issue recurrence in previous fork: Webhooks/Triggers failing in Supabase due to missing user execution.
   - Recurrence count: 4
-  - Status: USER VERIFICATION PENDING. 
-  - Note: *The agent writes  files, but the user MUST manually run them in the Supabase Dashboard.* You must remind the user to run , , , and .
+  - Status: USER VERIFICATION PENDING
+  - Note: You must frequently remind the user to run the custom  files (, , , ) in their Supabase Dashboard. 
 
 **Code Architecture**
 /app
 ├── frontend
 │   ├── public/ (manifest.json, sw.js)
 │   ├── src/
-│   │   ├── components/Layout/ (AdminLayout.jsx, StaffLayout.jsx)
-│   │   ├── lib/ (checklistAuto.js, webpush.js, excelExport.js)
+│   │   ├── components/Layout/
+│   │   ├── lib/ (reportPdf.js, excelExport.js, supabase.js)
 │   │   ├── pages/admin/ (Config.jsx, Personal.jsx, Reports.jsx, Trabajos.jsx)
 │   │   └── pages/staff/ (Home.jsx, Tasks.jsx)
 │   └── package.json
-├── backend (Unused by Vercel/React app)
 ├── supabase
 │   ├── 01_schema.sql to 15_cargos.sql
-│   └── README.md
-├── vercel.json (Added to fix deployment)
-├── VERCEL_DEPLOY.md
+├── vercel.json
 ├── memory/PRD.md
 
 **Key Technical Concepts**
-React.js, PWA, Supabase (Auth, PostgreSQL DB, Realtime), Tailwind CSS, Vercel Build configurations, HTML-to-Excel Blob export.
+React.js, PWA, Supabase (Auth, PostgreSQL DB, Realtime, RLS), Tailwind CSS.
 
 **key DB schema**
   - : {id, email, nombre, rol, cedula, cargo, hora_entrada, hora_salida}
@@ -88,63 +78,59 @@ React.js, PWA, Supabase (Auth, PostgreSQL DB, Realtime), Tailwind CSS, Vercel Bu
   - : {id, nombre, con_cronometro, created_at}
 
 **changes in tech stack**
-  - Introduced HTML-based Excel export () to avoid heavy external libraries like , maintaining native styling compatibility with MS Excel.
+  - None this session.
 
 **All files of reference** 
-  -  (New roles settings)
-  -  (Staff individual schedules & cedula)
-  -  (Dynamic task stopwatch based on role)
-  -  (Replaced with Trabajos simple list)
-  -  (New table schema for dynamic roles)
-  -  (Build configuration)
+  -  (Admin view of tasks)
+  -  (RLS policies for tasks)
+  -  (Cargos manager)
 
 **Areas that need refactoring**: 
-  - None immediately, but  and  are becoming large due to realtime subcriptions and timers.
+  -  and  are becoming complex.
 
 **key api endpoints**
   - Supabase REST client (Standard JS SDK)
 
 **Critical Info for New Agent** 
   - **LANGUAGE:** Respond EXCLUSIVELY in Spanish.
-  - **SUPABASE SQL:** You must instruct the user to execute the newly created SQL scripts (, , , ) in their Supabase Dashboard. The app will break if they don't.
-  - **VERCEL:** If the user mentions Vercel build errors again, remind them to leave Root Directory empty in Vercel, since  handles the monorepo logic.
-  - **RESUME POINT:** The previous agent finished editing  to add the Cargos section but didn't lint or test. Run linting and screenshot testing immediately before modifying more code.
+  - **TESTING REQUIREMENT:** You received a direct system reminder in the last prompt. After fixing the  insertion bug, you **MUST call the  subagent** to verify it against the reported issue before finishing. Do not verify purely by manual inspection.
+  - **NEW CREDENTIALS:** The admin password changed. Use  with password . For a test staff/driver account, use .
+  - **SUPABASE SQL:** Keep reminding the user to execute the SQL scripts. The bug might literally be because the user hasn't executed  properly, meaning the table exists but RLS is blocking inserts, or the table doesn't exist at all (though curl returned empty rather than a 404).
 
 **documents and test reports created in this job** 
-  - 
-  - 
+  -  (Updated)
 
 **Last 10 User Messages and any pending HUMAN messages** 
- - Message 7: Requested staff task creation, admin changing passwords, and script to create admins. (COMPLETED)
- - Message 61: User pasted  diff thinking it was a Vercel error. (CLARIFIED/COMPLETED)
- - Message 72: Requested Trabajos for drivers (details + qty), Excel export, and Admin read-only view. (COMPLETED)
- - Message 127: Requested individual schedules per staff, ID (cedula), specific roles (chofer/admin), and stopwatch for chofer tasks. (COMPLETED)
- - Message 214: Bug report - tasks don't show up in frontend, stopwatch missing. Requested dynamic roles list in settings. (IN PROGRESS - Code injected, needs testing)
+ - Message 7: Requested finishing the 3 priorities and adding a new Ausente feature for non-clocked workdays in Paraguay, plus a list of unrun SQL scripts. (COMPLETED)
+ - Message 53: Bug Report - Staff  loaded a task but it doesn't show in the admin panel. (IN PROGRESS)
+ - Message 54: System Reminder to use  after fixing the bug.
+ - Message 57: User provided new admin credentials ( / ) and reiterated the bug about  not showing up for the admin. (IN PROGRESS)
 
 **Project Health Check:**
-- Broken: Nothing strictly broken, but  /  are in an unverified state after the last injection.
+- Broken:  table inserts (either failing frontend or blocked by Supabase).
 - Mocked: Scheduled Push Notifications ().
 
 **3rd Party Integrations** 
   - Supabase (Database, Auth, Realtime) — requires User API Key.
 
 **Testing status**
-  - Testing agent used after significant changes: NO (Screenshot tool used for speed).
+  - Testing agent used after significant changes: NO (Required for the current bug).
   - Troubleshoot agent used after agent stuck in loop: NO
   - Test files created: []
-  - Known regressions: Waiting to verify if the task visibility bug is fully resolved.
+  - Known regressions:  inserts failing.
 
 **Credentials to test flow:**
  - Admin:  / 
+ - Chofer/Staff: 
 
 **What agent forgot to execute**
-- The agent was in the process of resolving Message 214. They completed the file edits via  but the job ended before they could run  or  to ensure the app doesn't crash from the new  additions.
+- The agent was trying to debug the  insertion issue but made a syntax error in their bash curl script (), causing the diagnostic to fail. The agent needs to properly inspect the frontend insertion payload and Supabase RLS, fix the issue, and call .
 
 **Debugging checklist for current issue**
-    Issue: Unverified state of  and Task creation bug.
+    Issue: Staff  are not saving to the DB / not visible to admin.
     Frontend files to check: 
-      -  (Lint and verify Cargos UI).
-      -  (Ensure  forcing fixed the rendering issue).
-    Database to check:
-      - Has the user run ?
-    Next step: Run , then . If clear, tell the user to run the  files and verify on their end.</analysis>
+      -  (Check the Supabase  logic for ).
+    Database/Backend to check:
+      -  (Check if RLS allows  for role /).
+      - Verify if the user has actually run the SQL scripts. If not, the insert will fail because the table doesn't exist or lacks policies.
+    Next Step: Login with the staff credentials, attempt to create a task via screenshot tool/curl, check network logs for the failure reason, fix it, then run .</analysis>
