@@ -4,7 +4,7 @@ import { supabase } from '../../lib/supabase';
 import { useRealtime } from '../../hooks/useRealtime';
 import { useAuth } from '../../contexts/AuthContext';
 import { MapPin, ClipboardList, LogIn as InIcon, LogOut as OutIcon, AlertTriangle, ChevronRight, CheckSquare, Plus, Repeat, Play, Square, Truck } from 'lucide-react';
-import { formatTime, todayISO, computeMarkDelay } from '../../lib/format';
+import { formatTime, formatDateEs, todayISO, computeMarkDelay, buildShifts, addDaysISO } from '../../lib/format';
 import { mapsUrl } from '../../lib/gps';
 import { requestNotificationPermission } from '../../hooks/useNotifications';
 import { useClockInReminder } from '../../hooks/useClockInReminder';
@@ -37,7 +37,7 @@ export default function StaffHome() {
   async function load() {
     const today = todayISO();
     const [m, t, c, ch, tr, cg] = await Promise.all([
-      supabase.from('marks').select('*').eq('user_id', user.id).eq('fecha', today).order('created_at'),
+      supabase.from('marks').select('*').eq('user_id', user.id).gte('fecha', addDaysISO(today, -1)).lte('fecha', today).order('created_at'),
       supabase.from('tasks').select('*').eq('assignee_id', user.id).neq('estado', 'completada').order('urgencia', { ascending: false }),
       supabase.from('attendance_config').select('*').limit(1).maybeSingle(),
       supabase.from('checklists').select('*').eq('user_id', user.id).eq('fecha', today).eq('completado', false).order('created_at'),
@@ -68,13 +68,20 @@ export default function StaffHome() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'trabajos', filter: `user_id=eq.${user.id}` }, load);
   }, [user?.id]);
 
-  const hasEntrada = todayMarks.some((m) => m.tipo === 'entrada');
-  const hasSalida = todayMarks.some((m) => m.tipo === 'salida');
-  const nextAction = !hasEntrada ? 'entrada' : !hasSalida ? 'salida' : null;
-
-  // Cronómetro de tiempo trabajado (entrada → salida o ahora)
-  const entradaMark = todayMarks.find((m) => m.tipo === 'entrada');
-  const salidaMark = todayMarks.find((m) => m.tipo === 'salida');
+  const today = todayISO();
+  // Turnos (soporta turnos nocturnos que cruzan la medianoche).
+  const shifts = buildShifts(todayMarks);
+  const currentShift = shifts[shifts.length - 1] || null;
+  const openShift = currentShift && currentShift.entrada && !currentShift.salida ? currentShift : null;
+  const lastClosed = [...shifts].reverse().find((s) => s.entrada && s.salida) || null;
+  // Jornada completa solo si el turno cerrado empezó HOY (turno diurno).
+  const jornadaCompletaHoy = !openShift && !!lastClosed && lastClosed.entrada?.fecha === today;
+  const nextAction = openShift ? 'salida' : jornadaCompletaHoy ? null : 'entrada';
+  const relevantShift = openShift || (jornadaCompletaHoy ? lastClosed : null);
+  const entradaMark = relevantShift?.entrada || null;
+  const salidaMark = openShift ? null : (relevantShift?.salida || null);
+  const hasEntrada = !!entradaMark;
+  const hasSalida = !!salidaMark;
   const workedMs = (() => {
     if (!entradaMark) return 0;
     const start = new Date(entradaMark.created_at).getTime();
@@ -159,8 +166,8 @@ export default function StaffHome() {
         </div>
 
         <div className="mt-6 grid grid-cols-2 gap-3">
-          <StatusChip tipo="entrada" mark={todayMarks.find((m) => m.tipo === 'entrada')} cfg={cfg} profile={profile} />
-          <StatusChip tipo="salida" mark={todayMarks.find((m) => m.tipo === 'salida')} cfg={cfg} profile={profile} />
+          <StatusChip tipo="entrada" mark={entradaMark} cfg={cfg} profile={profile} />
+          <StatusChip tipo="salida" mark={salidaMark} cfg={cfg} profile={profile} />
         </div>
 
         {entradaMark && (
@@ -172,7 +179,7 @@ export default function StaffHome() {
             </div>
             <p className="text-4xl md:text-5xl font-black tracking-tighter gold-gradient-text font-mono">{workedFmt}</p>
             <p className="text-[11px] text-zinc-500 mt-1">
-              Desde {entradaMark.hora?.slice(0, 5)}{salidaMark ? ` hasta ${salidaMark.hora?.slice(0, 5)}` : ''}
+              Desde {entradaMark.fecha !== today ? `${formatDateEs(entradaMark.fecha)} ` : ''}{entradaMark.hora?.slice(0, 5)}{salidaMark ? ` hasta ${salidaMark.fecha !== today ? `${formatDateEs(salidaMark.fecha)} ` : ''}${salidaMark.hora?.slice(0, 5)}` : ''}
             </p>
           </div>
         )}

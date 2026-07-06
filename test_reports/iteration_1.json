@@ -1,0 +1,28 @@
+{
+  "summary": "Frontend-only e2e testing of ALFATWIN admin Reports page after overnight-shift bug fix. Verified: (1) admin login with richy@gmail.com/alfa123 loads Panel; (2) Reports 'Este Mes' filter renders new columns 'Entrada · fecha y hora' and 'Salida · fecha y hora'; (3) overnight shift pairing across midnight for Gabriel Ferreira works — one row shows entrada 'lun, 29 jun 21:30' → salida 'mar, 30 jun 05:00' (7h 30m) and a separate open shift row 'mar, 30 jun 21:30' → '—'; (4) Excel button downloads .xls; (5) PDF button downloads .pdf and confirm dialog to delete photos was auto-dismissed (photos preserved). Zero JS console errors during the whole flow.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "MINOR: /app/memory/test_credentials.md lists admin password as 'richy123' but the real working password (per task and Supabase Auth) is 'alfa123'. Update the credentials file to reflect 'alfa123' to avoid future testing confusion.",
+    "MINOR (code review): The 'confirm' dialog to delete server photos fires right after every PDF download (single-emp mode too), even when the user only wanted a plain PDF. Consider prompting only in 'share' mode, or moving photo cleanup to a separate explicit button, so accidental clicks on 'PDF' cannot cause data loss for the admin."
+  ],
+  "critical_code_review_comments": [
+    "Reports.jsx (~L170-L219): generateAndShare() ALWAYS asks the destructive window.confirm to delete server photos, regardless of mode ('download' vs 'share'). This is a UX/risk concern — a user pressing 'PDF' might accept the confirm and permanently delete storage-hosted photos. Recommend gating photo-cleanup behind an explicit 'Purgar fotos' button, or at minimum, only prompting after 'share'.",
+    "Reports.jsx line 177: dateLabel hardcodes rangeToISO() as todayISO() (`(${rangeFromISO()} → ${todayISO()})`) even for 'custom' range → PDF header will show today's date instead of the chosen 'Hasta'. Bug in PDF header when using custom range.",
+    "Reports.jsx line 32-42: For range='mes' the code uses `t.getDate() - 30` on a JS Date, which is a rolling 30-day window, not the calendar month. The button label says 'Este mes' — semantics mismatch (task note also confirms this). If a strict 'calendar month' is desired, use start-of-month. Currently OK because seeded data (29-30 jun) falls inside the last 30 days on 2026-07-06.",
+    "format.js buildShifts (L131): correctly walks marks and pairs entrada→next salida across days. Verified in UI. Good."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (Supabase, skipped per request)", "frontend": "100%"},
+  "test_credentials": "admin: richy@gmail.com / alfa123 (WORKS). richy123 (from /app/memory/test_credentials.md) returned 400 Unauthorized.",
+  "seed_data_creation": "None — used seed data prepared by main agent (Gabriel Ferreira overnight shift 29-30 jun 2026).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Overnight shift bug is FIXED and verified in UI. Table headers on /admin/reportes are 'Entrada · fecha y hora' and 'Salida · fecha y hora'. Gabriel's overnight shift renders correctly (lun 29 jun 21:30 → mar 30 jun 05:00 = 7h 30m; and open shift mar 30 jun 21:30 → —). Excel + PDF downloads work with zero JS errors. The confirm('Eliminar las fotos respaldadas...') dialog always fires after PDF — dismiss it in tests. Note: admin password is 'alfa123' (test_credentials.md is stale with 'richy123').",
+  "rca_of_the_issue": "The reported bug (turno nocturno lost after midnight) was caused by pairing marks only within the same calendar date. Fix in /app/frontend/src/lib/format.js buildShifts() now walks marks ordered ASC by created_at and pairs each 'entrada' with the next 'salida' regardless of date, correctly emitting one shift row that spans two ISO dates. Reports.jsx also loads marks from `fromISO - 1 day` (addDaysISO(-1)) so shifts on the boundary aren't cut. UI now renders two date columns (entrada.fecha, salida.fecha) each with its own formatDateEs label. Verified with real Supabase data."
+}

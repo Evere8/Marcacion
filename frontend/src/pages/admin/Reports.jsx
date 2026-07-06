@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import { Loader2, FileText, Send, Download, MapPin, Camera, Clock, FileSpreadsheet, Calendar } from 'lucide-react';
-import { formatTime, formatDateEs, todayISO, computeMarkDelay, minutesToText, isWorkingDayPY, eachDayISO } from '../../lib/format';
+import { formatTime, formatDateEs, todayISO, computeMarkDelay, minutesToText, isWorkingDayPY, eachDayISO, buildShifts, addDaysISO } from '../../lib/format';
 import { mapsUrl } from '../../lib/gps';
 import { deleteMarkPhoto } from '../../lib/upload';
 import { buildAttendancePdf, sharePdf } from '../../lib/reportPdf';
@@ -45,8 +45,10 @@ export default function AdminReports() {
     setLoading(true);
     const fromISO = rangeFromISO();
     const toISO = rangeToISO();
+    // Cargamos un día antes para emparejar turnos nocturnos en el borde del rango.
+    const loadFrom = addDaysISO(fromISO, -1);
     const [m, p, c] = await Promise.all([
-      supabase.from('marks').select('*, profiles:user_id(nombre,foto_perfil,email,hora_entrada,hora_salida,cedula,cargo)').gte('fecha', fromISO).lte('fecha', toISO).order('fecha', { ascending: false }).order('created_at'),
+      supabase.from('marks').select('*, profiles:user_id(nombre,foto_perfil,email,hora_entrada,hora_salida,cedula,cargo)').gte('fecha', loadFrom).lte('fecha', toISO).order('fecha', { ascending: false }).order('created_at'),
       supabase.from('profiles').select('id,nombre,email,foto_perfil,hora_entrada,hora_salida,cedula,cargo').eq('rol', 'personal').eq('activo', true),
       supabase.from('attendance_config').select('*').limit(1).maybeSingle(),
     ]);
@@ -61,45 +63,54 @@ export default function AdminReports() {
   }
   useEffect(() => { loadAll(); /* eslint-disable-next-line */ }, [range, customFrom, customTo]);
 
-  // Group marks by employee → day with entrada/salida + computed delay
+  // Agrupar marcas por empleado → TURNOS (soporta turnos nocturnos cruzando medianoche)
   const employees = useMemo(() => {
-    const byUser = {};
-    for (const u of personal) byUser[u.id] = {
+    const fromISO = rangeFromISO();
+    const toISO = rangeToISO();
+    const today = todayISO();
+
+    const base = {};
+    for (const u of personal) base[u.id] = {
       id: u.id, nombre: u.nombre, email: u.email,
       cedula: u.cedula, cargo: u.cargo,
       hora_entrada: u.hora_entrada?.slice?.(0, 5) || cfg.hora_entrada,
       hora_salida: u.hora_salida?.slice?.(0, 5) || cfg.hora_salida,
-      days: {},
     };
+    const marksByUser = {};
     for (const m of marks) {
-      const key = m.user_id;
-      if (!byUser[key]) byUser[key] = {
-        id: key, nombre: m.profiles?.nombre || '—', email: m.profiles?.email || '—',
+      if (!base[m.user_id]) base[m.user_id] = {
+        id: m.user_id, nombre: m.profiles?.nombre || '—', email: m.profiles?.email || '—',
         cedula: m.profiles?.cedula, cargo: m.profiles?.cargo,
         hora_entrada: m.profiles?.hora_entrada?.slice?.(0, 5) || cfg.hora_entrada,
         hora_salida: m.profiles?.hora_salida?.slice?.(0, 5) || cfg.hora_salida,
-        days: {},
       };
-      const day = (byUser[key].days[m.fecha] ||= { fecha: m.fecha });
-      const enriched = { ...m, delay: computeMarkDelay(m, cfg) };
-      if (m.tipo === 'entrada') { if (!day.entrada) day.entrada = enriched; }
-      else day.salida = enriched;
+      (marksByUser[m.user_id] ||= []).push(m);
     }
-    return Object.values(byUser).map((u) => {
-      // Inyectar días hábiles (Lun-Vie) sin marcación como "Ausente".
-      const dayMap = u.days;
-      const today = todayISO();
-      const fromISO = rangeFromISO();
-      const toISO = rangeToISO();
+    for (const k in marksByUser) marksByUser[k].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+
+    return Object.values(base).map((u) => {
+      const empMarks = marksByUser[u.id] || [];
+      const inRange = (d) => d && d >= fromISO && d <= toISO;
+      const rowsShift = buildShifts(empMarks)
+        .filter((sh) => inRange(sh.entrada?.fecha) || inRange(sh.salida?.fecha))
+        .map((sh) => ({
+          key: sh.entrada?.id || sh.salida?.id,
+          entrada: sh.entrada ? { ...sh.entrada, delay: computeMarkDelay(sh.entrada, cfg) } : null,
+          salida: sh.salida || null,
+          sortDate: sh.entrada?.fecha || sh.salida?.fecha,
+          sortTime: sh.entrada?.hora || sh.salida?.hora || '',
+        }));
+      // Días hábiles (Lun-Vie, <= hoy) SIN ninguna marca → Ausente
+      const datesWithMarks = new Set(empMarks.map((m) => m.fecha));
       for (const d of eachDayISO(fromISO, toISO)) {
-        if (d > today) continue;            // no marcar futuro
-        if (!isWorkingDayPY(d)) continue;   // solo días hábiles
-        if (!dayMap[d]) dayMap[d] = { fecha: d, ausente: true };
+        if (d > today || !isWorkingDayPY(d) || datesWithMarks.has(d)) continue;
+        rowsShift.push({ key: `aus-${d}`, ausente: true, entrada: null, salida: null, sortDate: d, sortTime: '' });
       }
-      return {
-        ...u,
-        days: Object.values(dayMap).sort((a, b) => (a.fecha < b.fecha ? 1 : -1)),
-      };
+      const rows = rowsShift.sort((a, b) => {
+        if (a.sortDate !== b.sortDate) return a.sortDate < b.sortDate ? 1 : -1;
+        return a.sortTime < b.sortTime ? 1 : -1;
+      });
+      return { ...u, rows };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [marks, personal, cfg, range, customFrom, customTo]);
@@ -114,35 +125,34 @@ export default function AdminReports() {
 
   function exportExcel(scope) {
     const list = scope === 'all' ? employees : employees.filter((e) => e.id === scope);
-    if (!list.length || list.every((e) => e.days.length === 0)) { toast.error('Sin datos para exportar'); return; }
+    if (!list.length || list.every((e) => e.rows.length === 0)) { toast.error('Sin datos para exportar'); return; }
 
     const sections = list.map((emp) => {
-      const totalMin = emp.days.reduce((acc, d) => acc + (workedFor(d.entrada, d.salida) || 0), 0);
+      const totalMin = emp.rows.reduce((acc, d) => acc + (workedFor(d.entrada, d.salida) || 0), 0);
       const totalH = `${Math.floor(totalMin / 60)}h ${totalMin % 60}m`;
-      const rows = emp.days.map((d) => {
+      const rows = emp.rows.map((d) => {
         const e = d.entrada, s = d.salida, wm = workedFor(e, s);
         const ref = e || s;
         const lateLabel = d.ausente ? 'AUSENTE' : e ? (e.delay > 0 ? `+${e.delay}m` : 'A tiempo') : 'Sin marcar';
         return [
-          d.fecha,
-          e ? e.hora?.slice(0, 5) : '—',
-          s ? s.hora?.slice(0, 5) : '—',
+          e ? `${e.fecha} ${e.hora?.slice(0, 5)}` : (d.ausente ? d.sortDate : '—'),
+          s ? `${s.fecha} ${s.hora?.slice(0, 5)}` : '—',
           wm != null ? `${Math.floor(wm / 60)}h ${wm % 60}m` : '—',
           ref?.direccion_geolocalizada || '—',
           ref?.latitud != null ? `${ref.latitud.toFixed(5)}, ${ref.longitud.toFixed(5)}` : '—',
           lateLabel,
         ];
       });
-      const styles = emp.days.map((d) => {
+      const styles = emp.rows.map((d) => {
         const e = d.entrada;
         const lateStyle = d.ausente ? cellStyles.redLight : !e ? cellStyles.redLight : (e.delay > 0 ? cellStyles.redLight : cellStyles.greenLight);
-        return [cellStyles.bold, cellStyles.greenLight, cellStyles.blueLight, cellStyles.bold, '', '', lateStyle];
+        return [cellStyles.greenLight, cellStyles.blueLight, cellStyles.bold, '', '', lateStyle];
       });
-      const ausencias = emp.days.filter((d) => d.ausente).length;
+      const ausencias = emp.rows.filter((d) => d.ausente).length;
       return {
         title: `${emp.nombre}${emp.cedula ? ` · CI ${emp.cedula}` : ''} · ${emp.email}  ·  Jornada ${emp.hora_entrada}–${emp.hora_salida}  ·  Total: ${totalH}  ·  Ausencias: ${ausencias}`,
         headerColor: '#D4AF37',
-        headers: ['Fecha', 'Entrada', 'Salida', 'Trabajado', 'Ubicación', 'Coords', 'Estado'],
+        headers: ['Entrada (fecha y hora)', 'Salida (fecha y hora)', 'Trabajado', 'Ubicación', 'Coords', 'Estado'],
         rows,
         cellStyles: styles,
       };
@@ -194,7 +204,7 @@ export default function AdminReports() {
       // Best-effort: limpiar fotos del rango (queda la copia en el PDF)
       if (window.confirm('¿Eliminar las fotos respaldadas del servidor (ya quedan en el PDF)?')) {
         const photos = [];
-        for (const u of list) for (const d of u.days) {
+        for (const u of list) for (const d of u.rows) {
           if (d.entrada?.foto_url) photos.push({ id: d.entrada.id, url: d.entrada.foto_url });
           if (d.salida?.foto_url) photos.push({ id: d.salida.id, url: d.salida.foto_url });
         }
@@ -282,9 +292,9 @@ export default function AdminReports() {
       {loading && <div className="py-10 text-center text-zinc-500"><Loader2 className="w-5 h-5 mx-auto animate-spin" /></div>}
 
       {!loading && employees.map((emp) => {
-        const totalMin = emp.days.reduce((acc, d) => acc + (workedFor(d.entrada, d.salida) || 0), 0);
+        const totalMin = emp.rows.reduce((acc, d) => acc + (workedFor(d.entrada, d.salida) || 0), 0);
         const totalH = `${Math.floor(totalMin / 60)}h ${totalMin % 60}m`;
-        const ausencias = emp.days.filter((d) => d.ausente).length;
+        const ausencias = emp.rows.filter((d) => d.ausente).length;
         return (
           <section key={emp.id} className="card-premium p-5 fade-up" data-testid={`report-emp-${emp.id}`}>
             <header className="flex items-center justify-between gap-3 mb-4 flex-wrap">
@@ -333,9 +343,8 @@ export default function AdminReports() {
               <table className="w-full text-sm">
                 <thead className="bg-white/5 text-[10px] uppercase tracking-wider text-zinc-400">
                   <tr>
-                    <th className="px-3 py-2 text-left">Fecha</th>
-                    <th className="px-3 py-2 text-left">Entrada</th>
-                    <th className="px-3 py-2 text-left">Salida</th>
+                    <th className="px-3 py-2 text-left">Entrada · fecha y hora</th>
+                    <th className="px-3 py-2 text-left">Salida · fecha y hora</th>
                     <th className="px-3 py-2 text-left">Trabajado</th>
                     <th className="px-3 py-2 text-left">Estado</th>
                     <th className="px-3 py-2 text-left">Ubicación</th>
@@ -343,10 +352,10 @@ export default function AdminReports() {
                   </tr>
                 </thead>
                 <tbody>
-                  {emp.days.length === 0 && (
-                    <tr><td colSpan={7} className="text-center text-zinc-500 py-6">Sin marcaciones en este rango.</td></tr>
+                  {emp.rows.length === 0 && (
+                    <tr><td colSpan={6} className="text-center text-zinc-500 py-6">Sin marcaciones en este rango.</td></tr>
                   )}
-                  {emp.days.map((d) => {
+                  {emp.rows.map((d) => {
                     const e = d.entrada;
                     const s = d.salida;
                     const wm = workedFor(e, s);
@@ -354,11 +363,18 @@ export default function AdminReports() {
                     const lateClass = d.ausente ? 'bg-red-500/15 text-red-300' : !e ? 'bg-zinc-500/15 text-zinc-400' : e.delay > 0 ? 'bg-red-500/15 text-red-300' : 'bg-green-500/15 text-green-300';
                     const ref = e || s;
                     return (
-                      <tr key={d.fecha} className="border-t border-white/5 hover:bg-white/[0.02]">
-                        <td className="px-3 py-2 font-bold whitespace-nowrap">{formatDateEs(d.fecha)}</td>
-                        <td className="px-3 py-2 text-green-400 font-mono">{e ? formatTime(e.hora) : '—'}</td>
-                        <td className="px-3 py-2 text-blue-400 font-mono">{s ? formatTime(s.hora) : '—'}</td>
-                        <td className="px-3 py-2 font-bold flex items-center gap-1"><Clock className="w-3 h-3 text-gold" /> {wm != null ? `${Math.floor(wm / 60)}h ${wm % 60}m` : '—'}</td>
+                      <tr key={d.key} className="border-t border-white/5 hover:bg-white/[0.02]">
+                        <td className="px-3 py-2 whitespace-nowrap">
+                          {e ? (
+                            <><span className="font-bold">{formatDateEs(e.fecha)}</span> <span className="text-green-400 font-mono">{formatTime(e.hora)}</span></>
+                          ) : d.ausente ? <span className="font-bold text-zinc-400">{formatDateEs(d.sortDate)}</span> : <span className="text-zinc-600">—</span>}
+                        </td>
+                        <td className="px-3 py-2 whitespace-nowrap">
+                          {s ? (
+                            <><span className="font-bold">{formatDateEs(s.fecha)}</span> <span className="text-blue-400 font-mono">{formatTime(s.hora)}</span></>
+                          ) : <span className="text-zinc-600">—</span>}
+                        </td>
+                        <td className="px-3 py-2 font-bold"><span className="inline-flex items-center gap-1"><Clock className="w-3 h-3 text-gold" /> {wm != null ? `${Math.floor(wm / 60)}h ${wm % 60}m` : '—'}</span></td>
                         <td className="px-3 py-2"><span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase ${lateClass}`}>{lateLabel}</span></td>
                         <td className="px-3 py-2 text-xs">
                           {ref?.direccion_geolocalizada ? (

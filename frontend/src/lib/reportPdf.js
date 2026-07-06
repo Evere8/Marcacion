@@ -74,16 +74,15 @@ export async function buildAttendancePdf({ title, dateLabel, schedule, employees
     y += 28;
 
     const rows = [];
-    for (const day of emp.days) {
+    for (const day of emp.rows) {
       const e = day.entrada;
       const s = day.salida;
       const estado = day.ausente ? 'AUSENTE' : (e ? (e.delay > 0 ? `+${e.delay}m` : 'A tiempo') : 'Sin marcar');
       rows.push([
-        day.fecha,
-        e ? fmtTime(e.hora) : '—',
-        s ? fmtTime(s.hora) : '—',
+        e ? `${e.fecha} ${fmtTime(e.hora)}` : (day.ausente ? day.sortDate : '—'),
+        s ? `${s.fecha} ${fmtTime(s.hora)}` : '—',
         workedHHMM(e, s),
-        (e?.direccion_geolocalizada || s?.direccion_geolocalizada || '—').slice(0, 60),
+        (e?.direccion_geolocalizada || s?.direccion_geolocalizada || '—').slice(0, 50),
         e?.latitud != null ? `${e.latitud.toFixed(5)},${e.longitud.toFixed(5)}` : (s?.latitud != null ? `${s.latitud.toFixed(5)},${s.longitud.toFixed(5)}` : '—'),
         (e?.foto_url ? '✔' : '') + (s?.foto_url ? ' / ✔' : ''),
         estado,
@@ -92,14 +91,14 @@ export async function buildAttendancePdf({ title, dateLabel, schedule, employees
 
     autoTable(doc, {
       startY: y,
-      head: [['Fecha', 'Entrada', 'Salida', 'Trabajado', 'Ubicación', 'Coords', 'Foto', 'Estado']],
+      head: [['Entrada (fecha·hora)', 'Salida (fecha·hora)', 'Trabajado', 'Ubicación', 'Coords', 'Foto', 'Estado']],
       body: rows,
       styles: { fontSize: 8, cellPadding: 4, textColor: 30 },
       headStyles: { fillColor: [25, 25, 25], textColor: 255, fontStyle: 'bold' },
       alternateRowStyles: { fillColor: [248, 248, 248] },
       margin: { left: 30, right: 30 },
       didParseCell: (data) => {
-        if (data.section === 'body' && data.column.index === 7) {
+        if (data.section === 'body' && data.column.index === 6) {
           const raw = String(data.cell.raw);
           if (raw === 'AUSENTE') { data.cell.styles.textColor = [200, 50, 50]; data.cell.styles.fontStyle = 'bold'; }
           else if (raw.startsWith('+')) data.cell.styles.textColor = [200, 50, 50];
@@ -113,9 +112,9 @@ export async function buildAttendancePdf({ title, dateLabel, schedule, employees
     // Photos block
     if (includePhotos) {
       const allPhotos = [];
-      for (const d of emp.days) {
-        if (d.entrada?.foto_url) allPhotos.push({ when: `${d.fecha} entrada ${fmtTime(d.entrada.hora)}`, url: d.entrada.foto_url });
-        if (d.salida?.foto_url) allPhotos.push({ when: `${d.fecha} salida ${fmtTime(d.salida.hora)}`, url: d.salida.foto_url });
+      for (const d of emp.rows) {
+        if (d.entrada?.foto_url) allPhotos.push({ when: `${d.entrada.fecha} entrada ${fmtTime(d.entrada.hora)}`, url: d.entrada.foto_url });
+        if (d.salida?.foto_url) allPhotos.push({ when: `${d.salida.fecha} salida ${fmtTime(d.salida.hora)}`, url: d.salida.foto_url });
       }
       if (allPhotos.length) {
         if (y > 480) { doc.addPage('landscape'); y = 40; }

@@ -103,6 +103,48 @@ export function eachDayISO(fromISO, toISO) {
 }
 
 /**
+ * Suma (o resta) días a una fecha ISO (YYYY-MM-DD) y devuelve ISO.
+ */
+export function addDaysISO(iso, n) {
+  if (!iso) return iso;
+  const d = new Date(iso + 'T12:00:00');
+  d.setDate(d.getDate() + n);
+  return d.toLocaleDateString('en-CA');
+}
+
+/**
+ * ¿El horario cruza la medianoche? (turno nocturno, salida < entrada).
+ */
+export function isOvernightSchedule(horaEntrada, horaSalida) {
+  if (!horaEntrada || !horaSalida) return false;
+  const [eh, em] = String(horaEntrada).slice(0, 5).split(':').map(Number);
+  const [sh, sm] = String(horaSalida).slice(0, 5).split(':').map(Number);
+  return sh * 60 + sm < eh * 60 + em;
+}
+
+/**
+ * Construye turnos (pares entrada→salida) a partir de una lista de marcas
+ * ordenada ASCENDENTE por created_at. Soporta turnos nocturnos: una entrada
+ * de un día se empareja con la siguiente salida aunque sea de otro día.
+ * Devuelve [{ entrada, salida }] (cualquiera puede ser null en casos sueltos).
+ */
+export function buildShifts(marksAsc) {
+  const shifts = [];
+  let cur = null;
+  for (const m of marksAsc || []) {
+    if (m.tipo === 'entrada') {
+      if (cur) shifts.push(cur);
+      cur = { entrada: m, salida: null };
+    } else {
+      if (cur && !cur.salida) { cur.salida = m; shifts.push(cur); cur = null; }
+      else shifts.push({ entrada: null, salida: m });
+    }
+  }
+  if (cur) shifts.push(cur);
+  return shifts;
+}
+
+/**
  * Get effective schedule for a profile (with global fallback).
  */
 export function effectiveSchedule(profile, cfg) {
