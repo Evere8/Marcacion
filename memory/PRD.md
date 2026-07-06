@@ -198,3 +198,36 @@ Sistema profesional de marcación de personal (PWA + Supabase + Vercel) con marc
 
 ### Scripts SQL a ejecutar en Supabase (en orden, UNA vez c/u)
 12_staff_tasks_admin_tools.sql · 13_trabajos.sql · 14_personal_schedule_cargo.sql · 15_cargos.sql
+
+---
+
+## Sesión Jul 2026 — Turnos NOCTURNOS (cruzan medianoche) + reportes con 2 fechas
+
+### Problema
+Un colaborador con horario 21:30→05:00 podía marcar ENTRADA pero al cambiar de día
+la app "se reiniciaba" y le volvía a pedir ENTRADA, sin poder marcar la SALIDA.
+Causa raíz: las marcas se emparejaban solo dentro de la MISMA fecha (`fecha = hoy`).
+
+### Implementado (solo frontend, sin SQL nuevo)
+- **`lib/format.js`**: nuevos helpers `buildShifts(marksAsc)` (empareja cada `entrada`
+  con la siguiente `salida` aunque sean de días distintos), `addDaysISO`, `isOvernightSchedule`.
+- **`staff/Home.jsx`**: ahora carga marcas de AYER+HOY y usa `buildShifts` para detectar
+  un "turno abierto". Si hay una entrada sin salida (aunque sea de ayer) → el botón pide
+  **SALIDA**. Jornada "completa" solo si el turno cerrado empezó HOY (turno diurno).
+- **`admin/Reports.jsx`**: la tabla ahora muestra **2 columnas** "Entrada · fecha y hora"
+  y "Salida · fecha y hora"; arma turnos con `buildShifts`, carga desde `fromISO - 1 día`
+  para no cortar turnos en el borde. Ausentes muestran la fecha en la columna entrada.
+- **`lib/reportPdf.js`**: PDF con columnas Entrada/Salida cada una con su fecha+hora.
+- **Excel**: idem (2 columnas con fecha+hora).
+- Fix menor: el `window.confirm` que borra fotos del servidor ahora solo aparece al
+  **Compartir**, no al descargar PDF (evita borrados accidentales). PDF header usa
+  `rangeToISO()` para rango personalizado.
+
+### Verificación
+- Test unitario `/app/frontend/scripts/test_overnight.mjs` (7/7 passed).
+- testing_agent (frontend) 100%: turno nocturno 29→30 jun emparejado (7h 30m) + turno abierto.
+
+### ⚠️ Acción del usuario
+- En **Personal**, poné el horario nocturno (ej. 21:30 / 05:00) al empleado que trabaja de noche.
+  (Durante las pruebas se ajustó temporalmente el horario de Gabriel Ferreira a 21:30-05:00;
+  verificá/corregí si no corresponde.)

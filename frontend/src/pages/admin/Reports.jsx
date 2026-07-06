@@ -174,7 +174,7 @@ export default function AdminReports() {
       if (!list.length) { toast.error('Sin datos para el reporte'); return; }
       const blob = await buildAttendancePdf({
         title: scope === 'all' ? 'Reporte completo' : `Reporte de ${list[0].nombre}`,
-        dateLabel: `Rango: ${RANGES.find((x) => x.k === range)?.label} (${rangeFromISO()} → ${todayISO()})`,
+        dateLabel: `Rango: ${RANGES.find((x) => x.k === range)?.label} (${rangeFromISO()} → ${rangeToISO()})`,
         schedule: { entrada: cfg.hora_entrada, salida: cfg.hora_salida, toleranciaMin: cfg.tolerancia_minutos },
         employees: list,
         includePhotos: true,
@@ -201,8 +201,9 @@ export default function AdminReports() {
         else toast.success('PDF descargado');
       }
 
-      // Best-effort: limpiar fotos del rango (queda la copia en el PDF)
-      if (window.confirm('¿Eliminar las fotos respaldadas del servidor (ya quedan en el PDF)?')) {
+      // Best-effort: limpiar fotos del rango (queda la copia en el PDF).
+      // Solo al COMPARTIR (no en descarga simple) para evitar borrados accidentales.
+      if (mode === 'share' && window.confirm('¿Eliminar las fotos respaldadas del servidor (ya quedan en el PDF)?')) {
         const photos = [];
         for (const u of list) for (const d of u.rows) {
           if (d.entrada?.foto_url) photos.push({ id: d.entrada.id, url: d.entrada.foto_url });
