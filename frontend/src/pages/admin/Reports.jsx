@@ -18,6 +18,18 @@ const RANGES = [
   { k: 'custom', label: 'Personalizado' },
 ];
 
+// Devuelve la mejor ubicación disponible del turno (entrada o salida).
+// Prioriza una dirección real; si no hay, cae a las coordenadas GPS.
+// Así la columna Ubicación NUNCA queda en blanco cuando existen coordenadas.
+function locOf(e, s) {
+  const marks = [e, s].filter(Boolean);
+  const withAddr = marks.find((m) => m.direccion_geolocalizada && String(m.direccion_geolocalizada).trim());
+  const withCoords = marks.find((m) => m.latitud != null && m.longitud != null);
+  if (withAddr) return { text: withAddr.direccion_geolocalizada, lat: withAddr.latitud, lng: withAddr.longitud };
+  if (withCoords) return { text: `${Number(withCoords.latitud).toFixed(5)}, ${Number(withCoords.longitud).toFixed(5)}`, lat: withCoords.latitud, lng: withCoords.longitud };
+  return null;
+}
+
 export default function AdminReports() {
   const { user } = useAuth();
   const [range, setRange] = useState('hoy');
@@ -132,14 +144,14 @@ export default function AdminReports() {
       const totalH = `${Math.floor(totalMin / 60)}h ${totalMin % 60}m`;
       const rows = emp.rows.map((d) => {
         const e = d.entrada, s = d.salida, wm = workedFor(e, s);
-        const ref = e || s;
+        const loc = locOf(e, s);
         const lateLabel = d.ausente ? 'AUSENTE' : e ? (e.delay > 0 ? `+${e.delay}m` : 'A tiempo') : 'Sin marcar';
         return [
           e ? `${e.fecha} ${e.hora?.slice(0, 5)}` : (d.ausente ? d.sortDate : '—'),
           s ? `${s.fecha} ${s.hora?.slice(0, 5)}` : '—',
           wm != null ? `${Math.floor(wm / 60)}h ${wm % 60}m` : '—',
-          ref?.direccion_geolocalizada || '—',
-          ref?.latitud != null ? `${ref.latitud.toFixed(5)}, ${ref.longitud.toFixed(5)}` : '—',
+          loc?.text || '—',
+          loc?.lat != null ? `${Number(loc.lat).toFixed(5)}, ${Number(loc.lng).toFixed(5)}` : '—',
           lateLabel,
         ];
       });
@@ -378,16 +390,20 @@ export default function AdminReports() {
                         <td className="px-3 py-2 font-bold"><span className="inline-flex items-center gap-1"><Clock className="w-3 h-3 text-gold" /> {wm != null ? `${Math.floor(wm / 60)}h ${wm % 60}m` : '—'}</span></td>
                         <td className="px-3 py-2"><span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase ${lateClass}`}>{lateLabel}</span></td>
                         <td className="px-3 py-2 text-xs">
-                          {ref?.direccion_geolocalizada ? (
-                            <div className="flex items-center gap-1 max-w-[260px]">
-                              <span className="truncate text-zinc-300">{ref.direccion_geolocalizada}</span>
-                              {ref.latitud != null && (
-                                <a href={mapsUrl(ref.latitud, ref.longitud)} target="_blank" rel="noreferrer" className="shrink-0 text-gold hover:text-gold/80" data-testid={`report-map-${ref.id}`}>
-                                  <MapPin className="w-3.5 h-3.5" />
-                                </a>
-                              )}
-                            </div>
-                          ) : <span className="text-zinc-600">—</span>}
+                          {(() => {
+                            const loc = locOf(e, s);
+                            if (!loc) return <span className="text-zinc-600">—</span>;
+                            return (
+                              <div className="flex items-center gap-1 max-w-[260px]" data-testid={`report-loc-${d.key}`}>
+                                <span className="truncate text-zinc-300">{loc.text}</span>
+                                {loc.lat != null && (
+                                  <a href={mapsUrl(loc.lat, loc.lng)} target="_blank" rel="noreferrer" className="shrink-0 text-gold hover:text-gold/80" data-testid={`report-map-${ref?.id || d.key}`}>
+                                    <MapPin className="w-3.5 h-3.5" />
+                                  </a>
+                                )}
+                              </div>
+                            );
+                          })()}
                         </td>
                         <td className="px-3 py-2 text-center">
                           {(e?.foto_url || s?.foto_url) ? (

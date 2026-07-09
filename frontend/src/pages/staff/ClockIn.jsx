@@ -57,6 +57,11 @@ export default function ClockIn() {
     setPhase('saving');
     try {
       const { fecha, hora } = paraguayNow();
+      // Garantizar que la ubicación nunca quede vacía: si el geocodificado
+      // inverso aún no resolvió (o falló), guardamos las coordenadas GPS.
+      const addr = (address && address.trim())
+        ? address
+        : `${pos.coords.latitude.toFixed(5)}, ${pos.coords.longitude.toFixed(5)}`;
       const payload = {
         user_id: user.id,
         tipo,
@@ -65,7 +70,7 @@ export default function ClockIn() {
         latitud: pos.coords.latitude,
         longitud: pos.coords.longitude,
         precision_m: pos.coords.accuracy,
-        direccion_geolocalizada: address,
+        direccion_geolocalizada: addr,
         dispositivo_info: getDeviceInfo(),
         fake_gps_detected: false,
       };

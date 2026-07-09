@@ -6,6 +6,16 @@ import autoTable from 'jspdf-autotable';
 
 function fmtTime(t) { return t ? String(t).slice(0, 5) : '—:—'; }
 
+// Mejor ubicación del turno: dirección si existe, si no coordenadas GPS.
+function locOf(e, s) {
+  const marks = [e, s].filter(Boolean);
+  const withAddr = marks.find((m) => m.direccion_geolocalizada && String(m.direccion_geolocalizada).trim());
+  const withCoords = marks.find((m) => m.latitud != null && m.longitud != null);
+  if (withAddr) return { text: withAddr.direccion_geolocalizada, lat: withAddr.latitud, lng: withAddr.longitud };
+  if (withCoords) return { text: `${Number(withCoords.latitud).toFixed(5)}, ${Number(withCoords.longitud).toFixed(5)}`, lat: withCoords.latitud, lng: withCoords.longitud };
+  return null;
+}
+
 function workedHHMM(entradaMark, salidaMark) {
   if (!entradaMark || !salidaMark) return '—';
   const a = new Date(entradaMark.created_at).getTime();
@@ -77,13 +87,14 @@ export async function buildAttendancePdf({ title, dateLabel, schedule, employees
     for (const day of emp.rows) {
       const e = day.entrada;
       const s = day.salida;
+      const loc = locOf(e, s);
       const estado = day.ausente ? 'AUSENTE' : (e ? (e.delay > 0 ? `+${e.delay}m` : 'A tiempo') : 'Sin marcar');
       rows.push([
         e ? `${e.fecha} ${fmtTime(e.hora)}` : (day.ausente ? day.sortDate : '—'),
         s ? `${s.fecha} ${fmtTime(s.hora)}` : '—',
         workedHHMM(e, s),
-        (e?.direccion_geolocalizada || s?.direccion_geolocalizada || '—').slice(0, 50),
-        e?.latitud != null ? `${e.latitud.toFixed(5)},${e.longitud.toFixed(5)}` : (s?.latitud != null ? `${s.latitud.toFixed(5)},${s.longitud.toFixed(5)}` : '—'),
+        (loc?.text || '—').slice(0, 50),
+        loc?.lat != null ? `${Number(loc.lat).toFixed(5)},${Number(loc.lng).toFixed(5)}` : '—',
         (e?.foto_url ? '✔' : '') + (s?.foto_url ? ' / ✔' : ''),
         estado,
       ]);

@@ -1,0 +1,24 @@
+{
+  "summary": "Frontend-only e2e testing of ALFATWIN admin Reports page after the UBICACIÓN fallback fix. VERIFIED 100%: (1) login richy@gmail.com/alfa123 loads Panel; (2) ESTE MES over 8 employees produced 120 rows with actual marks — 0 of them had a blank Ubicación (all show either a real street address OR GPS coords in '-25.31xxx, -57.55xxx' format, with a report-loc-* container and a report-map-* map link); (3) AUSENTE rows correctly show '—'; (4) CUSTOM range 2026-05-24 → 2026-07-09 broadened dataset to 148 marked rows across all 8 employees, again 0 blanks; (5) three targeted empleados verified: Jhonatan Santacruz (3 marked, 0 blank), Mathias Sebastian Urunaga Baez (14 marked, 0 blank), Jose Cartaman (27 marked, 0 blank, includes 8 rows using GPS-coordinate fallback); (6) reports-excel-all downloaded 'alfatwin-reporte-custom-...xls' with zero JS console/page errors; (7) reports-download-all downloaded 'alfatwin-reporte-custom-2026-07-09.pdf' with zero JS errors AND NO window.confirm dialog appeared (the destructive photo-cleanup prompt is now correctly gated behind Compartir/Enviar).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Reports.jsx line 194: filename for PDF still uses `todayISO()` instead of `rangeToISO()`. In custom range the file was named 'alfatwin-reporte-custom-2026-07-09.pdf' — the 'Hasta' side coincided with today so it happens to look right, but if user picks 'Hasta' < today the filename won't reflect the chosen end date. Minor cosmetic bug, does not affect functionality.",
+    "reportPdf.js locOf() text (line 96) truncates to 50 chars in the PDF cell via .slice(0,50) — OK for landscape layout, but coord strings (~22 chars) always fit. Consistent with UI.",
+    "Reports.jsx locOf() (L24) and reportPdf.js locOf() (L10) are duplicated. Consider moving to a shared util (e.g. lib/format.js) to keep them in sync if the fallback logic evolves."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (Supabase, skipped per request)", "frontend": "100%"},
+  "test_credentials": "admin: richy@gmail.com / alfa123 (works). /app/memory/test_credentials.md is already correct.",
+  "seed_data_creation": "None — used real Supabase data (marks from 2026-05-24 → 2026-07-09).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "UBICACIÓN fallback fix is FIXED and 100% verified. Reports.jsx locOf(e,s) and reportPdf.js locOf(e,s) both prefer direccion_geolocalizada and cleanly fall back to formatted coords ('-25.31xxx, -57.55xxx') plus a MapPin link — verified 268 marked rows across 8 employees over 2 date ranges: 0 blanks. AUSENTE rows correctly still show '—'. The window.confirm('¿Eliminar las fotos...') dialog only fires now in 'share' mode (Compartir/Enviar) and does NOT fire on 'Descargar PDF' (both global and per-employee download button paths use mode='download').",
+  "rca_of_the_issue": "Root cause: many marks in Supabase have direccion_geolocalizada = '' (empty string) due to a race in the geocoding step at clock-in time, but they DO carry valid latitud/longitud. The old UI only rendered direccion_geolocalizada, so the Ubicación column showed '—' whenever the address string was empty even though GPS coords existed. Fix (verified): a helper locOf(e,s) is now used in both Reports.jsx (table cell + Excel export) and reportPdf.js (PDF column) which (1) picks the mark with a non-empty direccion_geolocalizada if any, else (2) picks the mark with lat/lng and formats them as 'lat.toFixed(5), lng.toFixed(5)', in both cases exposing lat/lng so the MapPin link (report-map-*) renders. Additionally ClockIn.jsx stores coords when the reverse-geocode call fails, preventing future marks from having both fields empty. Also the destructive photo-cleanup confirm dialog is now correctly gated by `if (mode === 'share' && window.confirm(...))` at Reports.jsx L218, so pressing 'Descargar PDF' never triggers it — verified by expect_download + dialog listener returning no dialogs during the download flow."
+}
