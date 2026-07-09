@@ -191,7 +191,7 @@ export default function AdminReports() {
         employees: list,
         includePhotos: true,
       });
-      const filename = `alfatwin-reporte-${range}-${todayISO()}.pdf`;
+      const filename = `alfatwin-reporte-${range}-${rangeToISO()}.pdf`;
 
       if (mode === 'download') {
         // Plain download — no share, no mailto.
