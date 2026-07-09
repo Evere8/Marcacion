@@ -150,7 +150,7 @@ export default function AdminReports() {
           e ? `${e.fecha} ${e.hora?.slice(0, 5)}` : (d.ausente ? d.sortDate : '—'),
           s ? `${s.fecha} ${s.hora?.slice(0, 5)}` : '—',
           wm != null ? `${Math.floor(wm / 60)}h ${wm % 60}m` : '—',
-          loc?.text || '—',
+          loc?.lat != null ? { link: mapsUrl(loc.lat, loc.lng), text: loc.text } : (loc?.text || '—'),
           loc?.lat != null ? `${Number(loc.lat).toFixed(5)}, ${Number(loc.lng).toFixed(5)}` : '—',
           lateLabel,
         ];

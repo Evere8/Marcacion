@@ -3,6 +3,7 @@
 // or attached to a mailto fallback by triggering a download.
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { mapsUrl } from './gps';
 
 function fmtTime(t) { return t ? String(t).slice(0, 5) : '—:—'; }
 
@@ -84,10 +85,12 @@ export async function buildAttendancePdf({ title, dateLabel, schedule, employees
     y += 28;
 
     const rows = [];
+    const locUrls = [];
     for (const day of emp.rows) {
       const e = day.entrada;
       const s = day.salida;
       const loc = locOf(e, s);
+      locUrls.push(loc?.lat != null ? mapsUrl(loc.lat, loc.lng) : null);
       const estado = day.ausente ? 'AUSENTE' : (e ? (e.delay > 0 ? `+${e.delay}m` : 'A tiempo') : 'Sin marcar');
       rows.push([
         e ? `${e.fecha} ${fmtTime(e.hora)}` : (day.ausente ? day.sortDate : '—'),
@@ -109,12 +112,21 @@ export async function buildAttendancePdf({ title, dateLabel, schedule, employees
       alternateRowStyles: { fillColor: [248, 248, 248] },
       margin: { left: 30, right: 30 },
       didParseCell: (data) => {
+        if (data.section === 'body' && data.column.index === 3 && locUrls[data.row.index]) {
+          data.cell.styles.textColor = [30, 64, 175];
+        }
         if (data.section === 'body' && data.column.index === 6) {
           const raw = String(data.cell.raw);
           if (raw === 'AUSENTE') { data.cell.styles.textColor = [200, 50, 50]; data.cell.styles.fontStyle = 'bold'; }
           else if (raw.startsWith('+')) data.cell.styles.textColor = [200, 50, 50];
           else if (raw === 'Sin marcar') data.cell.styles.textColor = [120, 120, 120];
           else data.cell.styles.textColor = [40, 130, 60];
+        }
+      },
+      didDrawCell: (data) => {
+        if (data.section === 'body' && data.column.index === 3) {
+          const url = locUrls[data.row.index];
+          if (url) doc.link(data.cell.x, data.cell.y, data.cell.width, data.cell.height, { url });
         }
       },
     });

@@ -40,7 +40,13 @@ function buildHtml({ title, subtitle, sections }) {
         const cells = row
           .map((cell, ci) => {
             const style = sec.cellStyles?.[ri]?.[ci] || '';
-            return `<td style="padding:7px 10px;border:1px solid #ddd;font-family:Arial;font-size:11px;${style}">${esc(cell)}</td>`;
+            let content;
+            if (cell && typeof cell === 'object' && cell.link) {
+              content = `<a href="${esc(cell.link)}" style="color:#1E40AF;text-decoration:underline;">${esc(cell.text ?? '')}</a>`;
+            } else {
+              content = esc(cell);
+            }
+            return `<td style="padding:7px 10px;border:1px solid #ddd;font-family:Arial;font-size:11px;${style}">${content}</td>`;
           })
           .join('');
         return `<tr>${cells}</tr>`;
