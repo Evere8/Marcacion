@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useRealtime } from '../../hooks/useRealtime';
+import { applyRealtimeChange } from '../../lib/realtime';
 import { useAuth } from '../../contexts/AuthContext';
 import { MapPin, ClipboardList, LogIn as InIcon, LogOut as OutIcon, AlertTriangle, ChevronRight, CheckSquare, Plus, Repeat, Play, Square, Truck } from 'lucide-react';
 import { formatTime, formatDateEs, todayISO, computeMarkDelay, buildShifts, addDaysISO } from '../../lib/format';
@@ -62,10 +63,16 @@ export default function StaffHome() {
 
   useRealtime(user ? `staff_home_${user.id}` : 'staff_home', (ch) => {
     if (!user) return;
-    ch.on('postgres_changes', { event: '*', schema: 'public', table: 'marks', filter: `user_id=eq.${user.id}` }, load)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: `assignee_id=eq.${user.id}` }, load)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'checklists', filter: `user_id=eq.${user.id}` }, load)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'trabajos', filter: `user_id=eq.${user.id}` }, load);
+    const t = todayISO();
+    const yesterday = addDaysISO(t, -1);
+    ch.on('postgres_changes', { event: '*', schema: 'public', table: 'marks', filter: `user_id=eq.${user.id}` },
+        (p) => applyRealtimeChange(setTodayMarks, p, { prepend: false, belongs: (r) => r.fecha >= yesterday && r.fecha <= t }))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: `assignee_id=eq.${user.id}` },
+        (p) => applyRealtimeChange(setTasks, p, { belongs: (r) => r.estado !== 'completada' }))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'checklists', filter: `user_id=eq.${user.id}` },
+        (p) => applyRealtimeChange(setPendings, p, { belongs: (r) => r.fecha === t && !r.completado }))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'trabajos', filter: `user_id=eq.${user.id}` },
+        (p) => applyRealtimeChange(setTrabajos, p, { belongs: (r) => r.fecha === t }));
   }, [user?.id]);
 
   const today = todayISO();

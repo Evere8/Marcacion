@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useRealtime } from '../../hooks/useRealtime';
+import { applyRealtimeChange } from '../../lib/realtime';
 import { useAuth } from '../../contexts/AuthContext';
 import { Input } from '../../components/ui/input';
 import { Checkbox } from '../../components/ui/checkbox';
@@ -18,6 +19,8 @@ export default function Checklist() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const loadedOnce = useRef(false);
+  const itemsRef = useRef([]);
+  useEffect(() => { itemsRef.current = items; }, [items]);
 
   async function refresh(silent = false) {
     if (!user) return;
@@ -46,17 +49,21 @@ export default function Checklist() {
   useEffect(() => {
     if (!user) return;
     refresh(false);
-    // Re-check every minute so hora-triggered repetibles auto-renew while
-    // the app is open.
-    const tick = setInterval(() => refresh(true), 60_000);
-    return () => clearInterval(tick);
+    // Sin polling: la lista se mantiene con Realtime (granular). Los
+    // repetibles por hora se regeneran al montar y al volver a primer plano.
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      autoGenerateRepeatablesByHour(user.id, itemsRef.current).catch(() => {});
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
     // eslint-disable-next-line
   }, [user?.id]);
 
   useRealtime(user ? `staff_checklist_${user.id}` : 'staff_checklist', (ch) => {
     if (!user) return;
     ch.on('postgres_changes', { event: '*', schema: 'public', table: 'checklists', filter: `user_id=eq.${user.id}` },
-      () => refresh(true));
+      (payload) => applyRealtimeChange(setItems, payload));
   }, [user?.id]);
 
   async function add() {

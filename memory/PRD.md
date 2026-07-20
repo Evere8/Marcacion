@@ -231,3 +231,30 @@ Causa raíz: las marcas se emparejaban solo dentro de la MISMA fecha (`fecha = h
 - En **Personal**, poné el horario nocturno (ej. 21:30 / 05:00) al empleado que trabaja de noche.
   (Durante las pruebas se ajustó temporalmente el horario de Gabriel Ferreira a 21:30-05:00;
   verificá/corregí si no corresponde.)
+
+---
+
+## Jul 2026 — Optimización de Egress Supabase · FASE 1 (frontend, sin SQL)
+
+Contexto: Egress PostgREST alto (4 GB / picos 273 MB/día) con tablas diminutas →
+causado por FRECUENCIA de peticiones (Realtime recargaba todo, polling 60s, select('*'),
+NotificationsBell duplicado). Punto de restauración: commit `ef67cf5`.
+
+Cambios implementados (verificado testing_agent 100% — iteration_3.json):
+- **`lib/realtime.js`** (nuevo): `applyRealtimeChange` (INSERT agrega / UPDATE reemplaza por id /
+  DELETE elimina por id, dedup por id, filtro `belongs`) + `createDebouncer`.
+- **`admin/Dashboard.jsx`**: Realtime solo `marks`(filtrado fecha=hoy)+`tasks` con **debounce 3s**;
+  quitadas subs globales a `profiles` y `checklists`; `select` con columnas explícitas; pausa si
+  pestaña oculta.
+- **`staff/Checklist.jsx` + `admin/Checklist.jsx`**: eliminado `setInterval 60s`; Realtime granular;
+  auto-generación de repetibles solo al montar y en `visibilitychange`.
+- **`staff/Home.jsx`**: Realtime granular en marks/tasks/checklists/trabajos; ya NO recarga las 6
+  tablas ni config/cargos por cada evento.
+- **`admin/Trabajos.jsx`, `admin/Personal.jsx`, `staff/Tasks.jsx`, `staff/History.jsx`,
+  `admin/EmpleadoDetail.jsx`**: patrón granular + columnas explícitas (con `belongs` por fecha/rol).
+- **`admin/Tasks.jsx`**: Realtime con debounce 3s (tiene join assignee) + columnas explícitas.
+- **NotificationsBell duplicado**: `useNotifications.js` ahora expone `NotificationsProvider` +
+  `useNotificationsShared`; montado UNA vez en `App.js`. Un solo fetch, un solo canal.
+
+Reducción esperada de egress: 70–90% (pendiente medir 24–48h en producción por el usuario).
+FASE 2 (pendiente de autorización): RPC/vistas SQL para reportes agregados + paginación.

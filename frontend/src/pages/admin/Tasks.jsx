@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useRealtime } from '../../hooks/useRealtime';
+import { createDebouncer } from '../../lib/realtime';
 import { useAuth } from '../../contexts/AuthContext';
 import { Link } from 'react-router-dom';
 import { Plus, Loader2, ChevronRight, ClipboardList } from 'lucide-react';
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '../../components/ui/dialog';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogDescription } from '../../components/ui/dialog';
 import { Input } from '../../components/ui/input';
 import { Textarea } from '../../components/ui/textarea';
 import { Label } from '../../components/ui/label';
@@ -23,14 +24,20 @@ export default function Tasks() {
   const [filter, setFilter] = useState('todas');
 
   async function load() {
-    const { data: t } = await supabase.from('tasks').select('*, assignee:assignee_id(nombre,foto_perfil)').order('created_at', { ascending: false });
+    const { data: t } = await supabase.from('tasks').select('id,titulo,descripcion,estado,urgencia,assignee_id,fecha_limite,created_at, assignee:assignee_id(nombre,foto_perfil)').order('created_at', { ascending: false });
     setTasks(t || []);
     const { data: p } = await supabase.from('profiles').select('id,nombre,foto_perfil').eq('rol', 'personal').eq('activo', true);
     setPersonal(p || []);
   }
   useEffect(() => { load(); }, []);
+  // Tasks trae join de assignee → recarga con debounce 3s (no por cada evento).
+  const reload = useRef(createDebouncer(() => {
+    if (document.visibilityState !== 'visible') return;
+    load();
+  }, 3000)).current;
+  useEffect(() => () => reload.cancel(), [reload]);
   useRealtime('admin_tasks', (ch) => {
-    ch.on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, load);
+    ch.on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, reload);
   }, []);
 
   async function save() {
@@ -119,7 +126,9 @@ export default function Tasks() {
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="bg-surface border-white/10" data-testid="tasks-create-dialog">
-          <DialogHeader><DialogTitle>Nueva tarea</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>Nueva tarea</DialogTitle>
+            <DialogDescription className="sr-only">Formulario para crear y asignar una nueva tarea.</DialogDescription>
+          </DialogHeader>
           <div className="space-y-3">
             <div>
               <Label className="label-eyebrow mb-2 block">Título</Label>

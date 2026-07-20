@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useRealtime } from '../../hooks/useRealtime';
+import { applyRealtimeChange } from '../../lib/realtime';
 import { Calendar, Download, Loader2, ClipboardList, FileSpreadsheet } from 'lucide-react';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
@@ -53,8 +54,9 @@ export default function AdminTrabajos() {
   }
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [from, to]);
   useRealtime('admin_trabajos', (ch) => {
-    ch.on('postgres_changes', { event: '*', schema: 'public', table: 'trabajos' }, load);
-  }, []);
+    ch.on('postgres_changes', { event: '*', schema: 'public', table: 'trabajos' },
+      (p) => applyRealtimeChange(setRows, p, { belongs: (r) => r.fecha >= from && r.fecha <= to }));
+  }, [from, to]);
 
   // Agrupar por chofer
   const grupos = useMemo(() => {

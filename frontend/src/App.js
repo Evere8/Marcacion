@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { SystemConfigProvider } from './contexts/SystemConfigContext';
+import { NotificationsProvider } from './hooks/useNotifications';
 import { Toaster } from './components/ui/sonner';
 import Login from './pages/Login';
 import AdminLayout from './components/Layout/AdminLayout';
@@ -76,35 +77,37 @@ export default function App() {
   return (
     <SystemConfigProvider>
       <AuthProvider>
-        <BrowserRouter>
-          <Toaster richColors theme="dark" position="top-right" />
-          <PushPrompt />
-          <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route path="/" element={<RootRedirect />} />
-            <Route path="/admin" element={<RoleGate role="admin"><AdminLayout /></RoleGate>}>
-              <Route index element={<AdminDashboard />} />
-              <Route path="personal" element={<AdminPersonal />} />
-              <Route path="personal/:id" element={<AdminEmpleadoDetail />} />
-              <Route path="tareas" element={<AdminTasks />} />
-              <Route path="tareas/:id" element={<AdminTaskDetail />} />
-              <Route path="trabajos" element={<AdminTrabajos />} />
-              <Route path="pendientes" element={<AdminChecklist />} />
-              <Route path="reportes" element={<AdminReports />} />
-              <Route path="config" element={<AdminConfig />} />
-            </Route>
-            <Route path="/app" element={<RoleGate role="personal"><StaffLayout /></RoleGate>}>
-              <Route index element={<StaffHome />} />
-              <Route path="marcar" element={<StaffClockIn />} />
-              <Route path="historial" element={<StaffHistory />} />
-              <Route path="tareas" element={<StaffTasks />} />
-              <Route path="tareas/:id" element={<StaffTaskDetail />} />
-              <Route path="tareas-jefe/:id" element={<StaffTaskDetail />} />
-              <Route path="pendientes" element={<StaffChecklist />} />
-            </Route>
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </BrowserRouter>
+        <NotificationsProvider>
+          <BrowserRouter>
+            <Toaster richColors theme="dark" position="top-right" />
+            <PushPrompt />
+            <Routes>
+              <Route path="/login" element={<Login />} />
+              <Route path="/" element={<RootRedirect />} />
+              <Route path="/admin" element={<RoleGate role="admin"><AdminLayout /></RoleGate>}>
+                <Route index element={<AdminDashboard />} />
+                <Route path="personal" element={<AdminPersonal />} />
+                <Route path="personal/:id" element={<AdminEmpleadoDetail />} />
+                <Route path="tareas" element={<AdminTasks />} />
+                <Route path="tareas/:id" element={<AdminTaskDetail />} />
+                <Route path="trabajos" element={<AdminTrabajos />} />
+                <Route path="pendientes" element={<AdminChecklist />} />
+                <Route path="reportes" element={<AdminReports />} />
+                <Route path="config" element={<AdminConfig />} />
+              </Route>
+              <Route path="/app" element={<RoleGate role="personal"><StaffLayout /></RoleGate>}>
+                <Route index element={<StaffHome />} />
+                <Route path="marcar" element={<StaffClockIn />} />
+                <Route path="historial" element={<StaffHistory />} />
+                <Route path="tareas" element={<StaffTasks />} />
+                <Route path="tareas/:id" element={<StaffTaskDetail />} />
+                <Route path="tareas-jefe/:id" element={<StaffTaskDetail />} />
+                <Route path="pendientes" element={<StaffChecklist />} />
+              </Route>
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </BrowserRouter>
+        </NotificationsProvider>
       </AuthProvider>
     </SystemConfigProvider>
   );

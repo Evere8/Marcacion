@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useRealtime } from '../../hooks/useRealtime';
+import { applyRealtimeChange } from '../../lib/realtime';
 import { ArrowLeft, ChevronRight, ClipboardList, MessageSquare, Loader2 } from 'lucide-react';
 import { Avatar } from './Dashboard';
 import { Badge } from '../../components/ui/badge';
@@ -15,8 +16,8 @@ export default function EmpleadoDetail() {
   async function load() {
     setLoading(true);
     const [{ data: p }, { data: t }] = await Promise.all([
-      supabase.from('profiles').select('*').eq('id', id).maybeSingle(),
-      supabase.from('tasks').select('*').eq('assignee_id', id).order('created_at', { ascending: false }),
+      supabase.from('profiles').select('id,nombre,email,telefono,foto_perfil,activo').eq('id', id).maybeSingle(),
+      supabase.from('tasks').select('id,titulo,descripcion,estado,urgencia,assignee_id,fecha_limite,created_at').eq('assignee_id', id).order('created_at', { ascending: false }),
     ]);
     setEmployee(p || null);
     setTasks(t || []);
@@ -25,7 +26,8 @@ export default function EmpleadoDetail() {
 
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [id]);
   useRealtime(`empleado_${id}`, (ch) => {
-    ch.on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: `assignee_id=eq.${id}` }, load);
+    ch.on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: `assignee_id=eq.${id}` },
+      (p) => applyRealtimeChange(setTasks, p));
   }, [id]);
 
   const grupos = useMemo(() => ({

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, createContext, useContext } from 'react';
 import { toast } from 'sonner';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
@@ -55,6 +55,17 @@ export function useNotifications() {
   }
 
   return { items, unread, markRead, markAllRead };
+}
+
+// Provider único: evita instanciar useNotifications() más de una vez
+// (p. ej. la campana en desktop + móvil). Una sola consulta, un solo canal.
+const NotificationsContext = createContext(null);
+export function NotificationsProvider({ children }) {
+  const value = useNotifications();
+  return <NotificationsContext.Provider value={value}>{children}</NotificationsContext.Provider>;
+}
+export function useNotificationsShared() {
+  return useContext(NotificationsContext) || { items: [], unread: 0, markRead: () => {}, markAllRead: () => {} };
 }
 
 function iconFor(tipo) {

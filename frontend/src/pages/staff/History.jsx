@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useRealtime } from '../../hooks/useRealtime';
+import { applyRealtimeChange } from '../../lib/realtime';
 import { useAuth } from '../../contexts/AuthContext';
 import { formatTime, formatDateEs, todayISO, paraguayNow, computeMarkDelay } from '../../lib/format';
 import { mapsUrl, getHighAccuracyPosition, reverseGeocode } from '../../lib/gps';
@@ -37,7 +38,7 @@ export default function History() {
       const fromISO = from.toISOString().slice(0, 10);
       const { data, error } = await supabase
         .from('marks')
-        .select('*')
+        .select('id,user_id,tipo,fecha,hora,latitud,longitud,precision_m,direccion_geolocalizada,foto_url,retraso_minutos,created_at')
         .eq('user_id', user.id)
         .gte('fecha', range === 'dia' ? todayISO() : fromISO)
         .order('fecha', { ascending: false })
@@ -61,9 +62,14 @@ export default function History() {
 
   useRealtime(user ? `staff_history_${user.id}` : 'staff_history', (ch) => {
     if (!user) return;
+    const t = new Date();
+    let f = new Date();
+    if (range === 'semana') f.setDate(t.getDate() - 7);
+    else if (range === 'mes') f.setDate(t.getDate() - 30);
+    const minFecha = range === 'dia' ? todayISO() : f.toISOString().slice(0, 10);
     ch.on('postgres_changes', { event: '*', schema: 'public', table: 'marks', filter: `user_id=eq.${user.id}` },
-      () => refresh(true));
-  }, [user?.id]);
+      (p) => applyRealtimeChange(setRows, p, { belongs: (r) => r.fecha >= minFecha }));
+  }, [user?.id, range]);
 
   async function del(r) {
     if (r.fecha !== todayISO()) { toast.error('Solo puedes borrar marcaciones del día.'); return; }

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useRealtime } from '../../hooks/useRealtime';
+import { applyRealtimeChange } from '../../lib/realtime';
 import { uploadAvatar } from '../../lib/upload';
 import { Plus, Edit2, Trash2, Power, PowerOff, User as UserIcon, Loader2, KeyRound, ChevronRight } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../../components/ui/dialog';
@@ -28,7 +29,7 @@ export default function Personal() {
 
   async function load() {
     const [{ data }, { data: cg }] = await Promise.all([
-      supabase.from('profiles').select('*').eq('rol', 'personal').order('created_at', { ascending: false }),
+      supabase.from('profiles').select('id,nombre,email,foto_perfil,cargo,hora_entrada,hora_salida,cedula,activo,rol,edad,telefono,direccion,created_at').eq('rol', 'personal').order('created_at', { ascending: false }),
       supabase.from('cargos').select('*').order('orden'),
     ]);
     setList(data || []);
@@ -36,7 +37,8 @@ export default function Personal() {
   }
   useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
   useRealtime('admin_personal', (ch) => {
-    ch.on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, load);
+    ch.on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' },
+      (p) => applyRealtimeChange(setList, p, { belongs: (r) => r.rol === 'personal' }));
   }, []);
 
   function openNew() { setForm(empty); setFile(null); setOpen(true); }

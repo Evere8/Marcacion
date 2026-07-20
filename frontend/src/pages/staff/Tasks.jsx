@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useRealtime } from '../../hooks/useRealtime';
+import { applyRealtimeChange } from '../../lib/realtime';
 import { useAuth } from '../../contexts/AuthContext';
 import { ClipboardList, Plus, Loader2, Pencil, Trash2, Calendar, Check, X, MessageSquare, ChevronRight } from 'lucide-react';
 import { Input } from '../../components/ui/input';
@@ -36,7 +37,7 @@ export default function StaffTrabajos() {
   async function loadAdminTasks() {
     if (!user) return;
     const { data } = await supabase.from('tasks')
-      .select('*')
+      .select('id,titulo,descripcion,estado,urgencia,assignee_id,admin_id,fecha_limite,created_at')
       .eq('assignee_id', user.id)
       .neq('estado', 'completada')
       .order('created_at', { ascending: false })
@@ -47,14 +48,15 @@ export default function StaffTrabajos() {
   useEffect(() => { loadAdminTasks(); /* eslint-disable-next-line */ }, [user?.id]);
   useRealtime(user ? `staff_admintasks_${user.id}` : 'staff_admintasks', (ch) => {
     if (!user) return;
-    ch.on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: `assignee_id=eq.${user.id}` }, loadAdminTasks);
+    ch.on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: `assignee_id=eq.${user.id}` },
+      (p) => applyRealtimeChange(setAdminTasks, p, { belongs: (r) => r.estado !== 'completada' && !!r.admin_id }));
   }, [user?.id]);
 
   async function load() {
     setLoading(true);
     const { data } = await supabase
       .from('trabajos')
-      .select('*')
+      .select('id,user_id,detalle,cantidad,estado,fecha,hora,iniciado_en,finalizado_en,duracion_segundos,creado_por_admin,created_at')
       .eq('user_id', user.id)
       .eq('fecha', dateFilter)
       .order('hora', { ascending: false });
@@ -64,7 +66,8 @@ export default function StaffTrabajos() {
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [dateFilter, user?.id]);
   useRealtime(user ? `staff_trab_${user.id}` : 'staff_trab', (ch) => {
     if (!user) return;
-    ch.on('postgres_changes', { event: '*', schema: 'public', table: 'trabajos', filter: `user_id=eq.${user.id}` }, load);
+    ch.on('postgres_changes', { event: '*', schema: 'public', table: 'trabajos', filter: `user_id=eq.${user.id}` },
+      (p) => applyRealtimeChange(setRows, p, { belongs: (r) => r.fecha === dateFilter }));
   }, [user?.id, dateFilter]);
 
   function openNew() { setForm(emptyForm); setOpen(true); }

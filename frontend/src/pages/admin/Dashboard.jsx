@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useRealtime } from '../../hooks/useRealtime';
+import { createDebouncer } from '../../lib/realtime';
 import { useAuth } from '../../contexts/AuthContext';
 import { MapContainer, TileLayer, Marker, Popup, CircleMarker } from 'react-leaflet';
 import L from 'leaflet';
@@ -70,11 +71,11 @@ export default function Dashboard() {
     const today = todayISO();
     const safe = (p) => p.then((r) => r).catch(() => ({ data: [] }));
     const [m, p, t, c, ch] = await Promise.all([
-      safe(supabase.from('marks').select('*, profiles:user_id(nombre,foto_perfil,email,hora_entrada,hora_salida)').eq('fecha', today).order('created_at', { ascending: false })),
-      safe(supabase.from('profiles').select('*').eq('activo', true)),
-      safe(supabase.from('tasks').select('*, assignee:assignee_id(nombre)').order('created_at', { ascending: false }).limit(30)),
+      safe(supabase.from('marks').select('id,user_id,tipo,fecha,hora,latitud,longitud,direccion_geolocalizada,retraso_minutos,created_at, profiles:user_id(nombre,foto_perfil,email,hora_entrada,hora_salida)').eq('fecha', today).order('created_at', { ascending: false })),
+      safe(supabase.from('profiles').select('id,nombre,foto_perfil,email,hora_entrada,hora_salida,activo,rol').eq('activo', true)),
+      safe(supabase.from('tasks').select('id,titulo,estado,urgencia,assignee_id,fecha_limite,created_at, assignee:assignee_id(nombre)').order('created_at', { ascending: false }).limit(30)),
       safe(supabase.from('attendance_config').select('*').limit(1).maybeSingle()),
-      user ? safe(supabase.from('checklists').select('*').eq('user_id', user.id).eq('fecha', today).eq('completado', false).order('created_at')) : Promise.resolve({ data: [] }),
+      user ? safe(supabase.from('checklists').select('id,titulo,repetible,completado,fecha,user_id').eq('user_id', user.id).eq('fecha', today).eq('completado', false).order('created_at')) : Promise.resolve({ data: [] }),
     ]);
     setMarks(m.data || []);
     setPersonal(p.data || []);
@@ -88,12 +89,18 @@ export default function Dashboard() {
   }
 
   useEffect(() => { loadAll(); /* eslint-disable-next-line */ }, [user?.id]);
+  // Realtime: NO recargar todo por cada evento. Sólo marks/tasks (las que
+  // cambian en vivo) con un debounce de 3s para preservar los joins de perfil.
+  // Se quitaron las suscripciones globales a profiles y checklists.
+  const reload = useRef(createDebouncer(() => {
+    if (document.visibilityState !== 'visible') return;
+    loadAll();
+  }, 3000)).current;
+  useEffect(() => () => reload.cancel(), [reload]);
   useRealtime('dash_marks', (ch) => {
     const safeOn = (...args) => { try { ch.on(...args); } catch (e) { /* noop */ } };
-    safeOn('postgres_changes', { event: '*', schema: 'public', table: 'marks' }, loadAll);
-    safeOn('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, loadAll);
-    safeOn('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, loadAll);
-    safeOn('postgres_changes', { event: '*', schema: 'public', table: 'checklists' }, loadAll);
+    safeOn('postgres_changes', { event: '*', schema: 'public', table: 'marks', filter: `fecha=eq.${todayISO()}` }, reload);
+    safeOn('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, reload);
   }, []);
 
   const sinMarcar = useMemo(() => {
