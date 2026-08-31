@@ -258,3 +258,9 @@ Cambios implementados (verificado testing_agent 100% — iteration_3.json):
 
 Reducción esperada de egress: 70–90% (pendiente medir 24–48h en producción por el usuario).
 FASE 2 (pendiente de autorización): RPC/vistas SQL para reportes agregados + paginación.
+
+---
+## 2026-08-31 — Carga de trabajos por admin + reportes simplificados
+- Admin ahora puede CARGAR trabajos desde el panel Trabajos (botón "Cargar trabajo"): selecciona Personal + Descripción + Precio (cantidad). `Trabajos.jsx`.
+- Reporte de marcaciones (PDF y Excel) rediseñado: UNA sola tabla continua con columna **Nombre** (sin bloque/título dorado por persona). Columnas: Nombre · Entrada · Salida · Trabajado · Ubicación · Estado. Se eliminó la columna "Coords"; la Ubicación es el enlace clickeable a Google Maps. `reportPdf.js`, `Reports.jsx`.
+- ACCIÓN REQUERIDA DEL USUARIO EN SUPABASE: ejecutar `supabase/16_admin_trabajos.sql` (agrega políticas RLS `trabajos_insert_admin/update_admin/delete_admin`). Sin esto, el admin recibe "new row violates row-level security policy for table trabajos".

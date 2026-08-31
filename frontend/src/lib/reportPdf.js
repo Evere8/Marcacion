@@ -74,18 +74,13 @@ export async function buildAttendancePdf({ title, dateLabel, schedule, employees
 
   let y = 80;
 
-  for (const emp of employees) {
-    const blockTitle = `${emp.nombre || '—'} · ${emp.email || ''}`;
-    doc.setFillColor(212, 175, 55);
-    doc.setTextColor(10);
-    doc.setFontSize(11);
-    doc.setFont('helvetica', 'bold');
-    doc.rect(30, y, pageW - 60, 22, 'F');
-    doc.text(blockTitle, 38, y + 15);
-    y += 28;
-
-    const rows = [];
-    const locUrls = [];
+  // Tabla ÚNICA y continua: todo el personal junto, con columna Nombre.
+  // Sin bloque/título dorado por persona → reporte más compacto y rápido de leer.
+  const sorted = [...employees].sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
+  const rows = [];
+  const locUrls = [];
+  const photoList = [];
+  for (const emp of sorted) {
     for (const day of emp.rows) {
       const e = day.entrada;
       const s = day.salida;
@@ -93,79 +88,73 @@ export async function buildAttendancePdf({ title, dateLabel, schedule, employees
       locUrls.push(loc?.lat != null ? mapsUrl(loc.lat, loc.lng) : null);
       const estado = day.ausente ? 'AUSENTE' : (e ? (e.delay > 0 ? `+${e.delay}m` : 'A tiempo') : 'Sin marcar');
       rows.push([
+        emp.nombre || '—',
         e ? `${e.fecha} ${fmtTime(e.hora)}` : (day.ausente ? day.sortDate : '—'),
         s ? `${s.fecha} ${fmtTime(s.hora)}` : '—',
         workedHHMM(e, s),
-        (loc?.text || '—').slice(0, 50),
-        loc?.lat != null ? `${Number(loc.lat).toFixed(5)},${Number(loc.lng).toFixed(5)}` : '—',
-        (e?.foto_url ? '✔' : '') + (s?.foto_url ? ' / ✔' : ''),
+        loc?.text || '—',
         estado,
       ]);
-    }
-
-    autoTable(doc, {
-      startY: y,
-      head: [['Entrada (fecha·hora)', 'Salida (fecha·hora)', 'Trabajado', 'Ubicación', 'Coords', 'Foto', 'Estado']],
-      body: rows,
-      styles: { fontSize: 8, cellPadding: 4, textColor: 30 },
-      headStyles: { fillColor: [25, 25, 25], textColor: 255, fontStyle: 'bold' },
-      alternateRowStyles: { fillColor: [248, 248, 248] },
-      margin: { left: 30, right: 30 },
-      didParseCell: (data) => {
-        if (data.section === 'body' && data.column.index === 3 && locUrls[data.row.index]) {
-          data.cell.styles.textColor = [30, 64, 175];
-        }
-        if (data.section === 'body' && data.column.index === 6) {
-          const raw = String(data.cell.raw);
-          if (raw === 'AUSENTE') { data.cell.styles.textColor = [200, 50, 50]; data.cell.styles.fontStyle = 'bold'; }
-          else if (raw.startsWith('+')) data.cell.styles.textColor = [200, 50, 50];
-          else if (raw === 'Sin marcar') data.cell.styles.textColor = [120, 120, 120];
-          else data.cell.styles.textColor = [40, 130, 60];
-        }
-      },
-      didDrawCell: (data) => {
-        if (data.section === 'body' && data.column.index === 3) {
-          const url = locUrls[data.row.index];
-          if (url) doc.link(data.cell.x, data.cell.y, data.cell.width, data.cell.height, { url });
-        }
-      },
-    });
-    y = doc.lastAutoTable.finalY + 10;
-
-    // Photos block
-    if (includePhotos) {
-      const allPhotos = [];
-      for (const d of emp.rows) {
-        if (d.entrada?.foto_url) allPhotos.push({ when: `${d.entrada.fecha} entrada ${fmtTime(d.entrada.hora)}`, url: d.entrada.foto_url });
-        if (d.salida?.foto_url) allPhotos.push({ when: `${d.salida.fecha} salida ${fmtTime(d.salida.hora)}`, url: d.salida.foto_url });
+      if (includePhotos) {
+        if (e?.foto_url) photoList.push({ when: `${emp.nombre} · ${e.fecha} entrada ${fmtTime(e.hora)}`, url: e.foto_url });
+        if (s?.foto_url) photoList.push({ when: `${emp.nombre} · ${s.fecha} salida ${fmtTime(s.hora)}`, url: s.foto_url });
       }
-      if (allPhotos.length) {
-        if (y > 480) { doc.addPage('landscape'); y = 40; }
-        doc.setFontSize(9);
+    }
+  }
+
+  autoTable(doc, {
+    startY: y,
+    head: [['Nombre', 'Entrada', 'Salida', 'Trabajado', 'Ubicación', 'Estado']],
+    body: rows,
+    styles: { fontSize: 8, cellPadding: 4, textColor: 30 },
+    headStyles: { fillColor: [212, 175, 55], textColor: 10, fontStyle: 'bold' },
+    alternateRowStyles: { fillColor: [248, 248, 248] },
+    columnStyles: { 0: { fontStyle: 'bold', textColor: [10, 10, 10] } },
+    margin: { left: 30, right: 30 },
+    didParseCell: (data) => {
+      if (data.section === 'body' && data.column.index === 4 && locUrls[data.row.index]) {
+        data.cell.styles.textColor = [30, 64, 175];
+      }
+      if (data.section === 'body' && data.column.index === 5) {
+        const raw = String(data.cell.raw);
+        if (raw === 'AUSENTE') { data.cell.styles.textColor = [200, 50, 50]; data.cell.styles.fontStyle = 'bold'; }
+        else if (raw.startsWith('+')) data.cell.styles.textColor = [200, 50, 50];
+        else if (raw === 'Sin marcar') data.cell.styles.textColor = [120, 120, 120];
+        else data.cell.styles.textColor = [40, 130, 60];
+      }
+    },
+    didDrawCell: (data) => {
+      if (data.section === 'body' && data.column.index === 4) {
+        const url = locUrls[data.row.index];
+        if (url) doc.link(data.cell.x, data.cell.y, data.cell.width, data.cell.height, { url });
+      }
+    },
+  });
+  y = doc.lastAutoTable.finalY + 16;
+
+  // Fotos de marcación (todas, etiquetadas con el nombre) al final del reporte.
+  if (includePhotos && photoList.length) {
+    if (y > 480) { doc.addPage('landscape'); y = 40; }
+    doc.setFontSize(10);
+    doc.setTextColor(80);
+    doc.text('Fotos de marcación:', 30, y + 14);
+    y += 22;
+    const w = 110, h = 80, gap = 10;
+    let x = 30;
+    for (const p of photoList) {
+      if (x + w > pageW - 30) { x = 30; y += h + 24; }
+      if (y + h > doc.internal.pageSize.getHeight() - 40) { doc.addPage('landscape'); y = 40; x = 30; }
+      const dataUrl = await fetchDataUrl(p.url);
+      if (dataUrl) {
+        try { doc.addImage(dataUrl, 'WEBP', x, y, w, h, undefined, 'FAST'); } catch {
+          try { doc.addImage(dataUrl, 'JPEG', x, y, w, h, undefined, 'FAST'); } catch {}
+        }
+        doc.setFontSize(7);
         doc.setTextColor(80);
-        doc.text('Fotos adjuntas:', 30, y + 14);
-        y += 20;
-        const w = 110, h = 80, gap = 10;
-        let x = 30;
-        for (const p of allPhotos) {
-          if (x + w > pageW - 30) { x = 30; y += h + 22; }
-          if (y + h > doc.internal.pageSize.getHeight() - 40) { doc.addPage('landscape'); y = 40; x = 30; }
-          const dataUrl = await fetchDataUrl(p.url);
-          if (dataUrl) {
-            try { doc.addImage(dataUrl, 'WEBP', x, y, w, h, undefined, 'FAST'); } catch {
-              try { doc.addImage(dataUrl, 'JPEG', x, y, w, h, undefined, 'FAST'); } catch {}
-            }
-            doc.setFontSize(7);
-            doc.setTextColor(80);
-            doc.text(p.when, x, y + h + 10, { maxWidth: w });
-          }
-          x += w + gap;
-        }
-        y += h + 26;
+        doc.text(p.when, x, y + h + 10, { maxWidth: w });
       }
+      x += w + gap;
     }
-
-    if (y > 460) { doc.addPage('landscape'); y = 40; }
   }
 
   return doc.output('blob');

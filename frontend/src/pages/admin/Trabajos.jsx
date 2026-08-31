@@ -2,11 +2,15 @@ import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useRealtime } from '../../hooks/useRealtime';
 import { applyRealtimeChange } from '../../lib/realtime';
-import { Calendar, Download, Loader2, ClipboardList, FileSpreadsheet } from 'lucide-react';
+import { Calendar, Download, Loader2, ClipboardList, FileSpreadsheet, Plus } from 'lucide-react';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
+import { Textarea } from '../../components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogDescription } from '../../components/ui/dialog';
 import { Avatar } from './Dashboard';
 import { downloadExcel, cellStyles } from '../../lib/excelExport';
+import { useAuth } from '../../contexts/AuthContext';
 import { toast } from 'sonner';
 
 function todayPY() {
@@ -41,6 +45,10 @@ export default function AdminTrabajos() {
   const [rows, setRows] = useState([]);
   const [profiles, setProfiles] = useState([]);
   const [loading, setLoading] = useState(true);
+  const { user } = useAuth();
+  const [creOpen, setCreOpen] = useState(false);
+  const [creForm, setCreForm] = useState({ user_id: '', detalle: '', cantidad: '' });
+  const [saving, setSaving] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -81,6 +89,23 @@ export default function AdminTrabajos() {
   }, [rows, profiles]);
 
   const totalGeneral = useMemo(() => grupos.reduce((acc, g) => acc + g.total, 0), [grupos]);
+
+  async function crearTrabajo() {
+    if (!creForm.user_id) { toast.error('Selecciona un personal'); return; }
+    if (!creForm.detalle.trim()) { toast.error('La descripción es obligatoria'); return; }
+    const cant = creForm.cantidad === '' ? 0 : Number(creForm.cantidad);
+    if (Number.isNaN(cant)) { toast.error('El precio debe ser un número'); return; }
+    setSaving(true);
+    try {
+      const { error } = await supabase.from('trabajos').insert({
+        user_id: creForm.user_id, detalle: creForm.detalle.trim(), cantidad: cant,
+      });
+      if (error) throw error;
+      toast.success('Trabajo cargado');
+      setCreOpen(false); setCreForm({ user_id: '', detalle: '', cantidad: '' });
+      load();
+    } catch (e) { toast.error(e.message || 'Error al cargar'); } finally { setSaving(false); }
+  }
 
   function exportarExcel() {
     if (grupos.length === 0) { toast.error('Sin trabajos en el rango'); return; }
@@ -137,9 +162,14 @@ export default function AdminTrabajos() {
           <p className="label-eyebrow">Operaciones</p>
           <h1 className="text-3xl font-black tracking-tight">Trabajos del personal</h1>
         </div>
-        <button onClick={exportarExcel} className="btn-gold flex items-center gap-2" data-testid="admin-trabajos-export">
-          <FileSpreadsheet className="w-4 h-4" /> Exportar Excel
-        </button>
+        <div className="flex gap-2 w-full sm:w-auto">
+          <button onClick={() => setCreOpen(true)} className="btn-gold flex items-center gap-2" data-testid="admin-trabajos-new">
+            <Plus className="w-4 h-4" /> Cargar trabajo
+          </button>
+          <button onClick={exportarExcel} className="btn-ghost flex items-center gap-2" data-testid="admin-trabajos-export">
+            <FileSpreadsheet className="w-4 h-4" /> Exportar Excel
+          </button>
+        </div>
       </header>
 
       <div className="card-premium p-4 flex items-end gap-3 flex-wrap" data-testid="admin-trabajos-filters">
@@ -245,6 +275,40 @@ export default function AdminTrabajos() {
           );
         })}
       </div>
+
+      <Dialog open={creOpen} onOpenChange={setCreOpen}>
+        <DialogContent className="bg-surface border-white/10" data-testid="admin-trabajos-create-dialog">
+          <DialogHeader>
+            <DialogTitle>Cargar trabajo</DialogTitle>
+            <DialogDescription className="sr-only">Asignar un trabajo a un personal con descripción y precio.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label className="label-eyebrow mb-2 block">Personal</Label>
+              <Select value={creForm.user_id} onValueChange={(v) => setCreForm({ ...creForm, user_id: v })}>
+                <SelectTrigger className="bg-panel border-white/10 h-11 rounded-xl" data-testid="admin-trabajos-personal"><SelectValue placeholder="Seleccionar personal" /></SelectTrigger>
+                <SelectContent className="bg-surface border-white/10 max-h-64">
+                  {profiles.map((p) => <SelectItem key={p.id} value={p.id}>{p.nombre}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="label-eyebrow mb-2 block">Descripción</Label>
+              <Textarea value={creForm.detalle} onChange={(e) => setCreForm({ ...creForm, detalle: e.target.value })} rows={3} className="bg-panel border-white/10 rounded-xl" data-testid="admin-trabajos-detalle" placeholder="Detalle del trabajo" />
+            </div>
+            <div>
+              <Label className="label-eyebrow mb-2 block">Precio</Label>
+              <Input type="number" inputMode="numeric" value={creForm.cantidad} onChange={(e) => setCreForm({ ...creForm, cantidad: e.target.value })} className="bg-panel border-white/10 h-11 rounded-xl" data-testid="admin-trabajos-precio" placeholder="0" />
+            </div>
+          </div>
+          <DialogFooter>
+            <button onClick={() => setCreOpen(false)} className="btn-ghost">Cancelar</button>
+            <button onClick={crearTrabajo} disabled={saving} className="btn-gold flex items-center gap-2" data-testid="admin-trabajos-save">
+              {saving && <Loader2 className="w-4 h-4 animate-spin" />} Cargar
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

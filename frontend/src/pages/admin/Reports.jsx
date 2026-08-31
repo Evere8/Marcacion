@@ -139,36 +139,35 @@ export default function AdminReports() {
     const list = scope === 'all' ? employees : employees.filter((e) => e.id === scope);
     if (!list.length || list.every((e) => e.rows.length === 0)) { toast.error('Sin datos para exportar'); return; }
 
-    const sections = list.map((emp) => {
-      const totalMin = emp.rows.reduce((acc, d) => acc + (workedFor(d.entrada, d.salida) || 0), 0);
-      const totalH = `${Math.floor(totalMin / 60)}h ${totalMin % 60}m`;
-      const rows = emp.rows.map((d) => {
+    // Una sola tabla continua con columna Nombre (sin título por persona).
+    const sorted = [...list].sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
+    const rows = [];
+    const styles = [];
+    for (const emp of sorted) {
+      for (const d of emp.rows) {
         const e = d.entrada, s = d.salida, wm = workedFor(e, s);
         const loc = locOf(e, s);
         const lateLabel = d.ausente ? 'AUSENTE' : e ? (e.delay > 0 ? `+${e.delay}m` : 'A tiempo') : 'Sin marcar';
-        return [
+        rows.push([
+          emp.nombre,
           e ? `${e.fecha} ${e.hora?.slice(0, 5)}` : (d.ausente ? d.sortDate : '—'),
           s ? `${s.fecha} ${s.hora?.slice(0, 5)}` : '—',
           wm != null ? `${Math.floor(wm / 60)}h ${wm % 60}m` : '—',
           loc?.lat != null ? { link: mapsUrl(loc.lat, loc.lng), text: loc.text } : (loc?.text || '—'),
-          loc?.lat != null ? `${Number(loc.lat).toFixed(5)}, ${Number(loc.lng).toFixed(5)}` : '—',
           lateLabel,
-        ];
-      });
-      const styles = emp.rows.map((d) => {
-        const e = d.entrada;
+        ]);
         const lateStyle = d.ausente ? cellStyles.redLight : !e ? cellStyles.redLight : (e.delay > 0 ? cellStyles.redLight : cellStyles.greenLight);
-        return [cellStyles.greenLight, cellStyles.blueLight, cellStyles.bold, '', '', lateStyle];
-      });
-      const ausencias = emp.rows.filter((d) => d.ausente).length;
-      return {
-        title: `${emp.nombre}${emp.cedula ? ` · CI ${emp.cedula}` : ''} · ${emp.email}  ·  Jornada ${emp.hora_entrada}–${emp.hora_salida}  ·  Total: ${totalH}  ·  Ausencias: ${ausencias}`,
-        headerColor: '#D4AF37',
-        headers: ['Entrada (fecha y hora)', 'Salida (fecha y hora)', 'Trabajado', 'Ubicación', 'Coords', 'Estado'],
-        rows,
-        cellStyles: styles,
-      };
-    });
+        styles.push([cellStyles.bold, cellStyles.greenLight, cellStyles.blueLight, cellStyles.bold, '', lateStyle]);
+      }
+    }
+
+    const sections = [{
+      title: 'Marcaciones del personal',
+      headerColor: '#D4AF37',
+      headers: ['Nombre', 'Entrada', 'Salida', 'Trabajado', 'Ubicación', 'Estado'],
+      rows,
+      cellStyles: styles,
+    }];
 
     downloadExcel({
       filename: `alfatwin-reporte-${range}-${rangeFromISO()}_${rangeToISO()}`,

@@ -7,33 +7,46 @@ PRODUCT REQUIREMENTS:
 - ALFATWIN premium dark UI design.
 - Accurate GPS tracking during clock-ins con validación de horarios y reportes en PDF y Excel.
 
-**User's preferred language**: Spanish (The user EXCLUSIVELY speaks Spanish. You MUST automatically detect this and INSTRUCT the next agent to respond in **ESPAÑOL** only).
+**User's preferred language**: Spanish (The user EXCLUSIVELY speaks Spanish. You MUST automatically detect this and INSTRUCT the next agent to respond in **ESPAÑOL** solo).
 
 **what currently exists?** 
-A React PWA connected to Supabase. Features include GPS clock-ins, Task management, PDF/Excel Reports, and Web Push notifications. The app now includes dynamic Cargos (roles) management in the Admin panel, a client-side Ausente calculation for unclocked Paraguayan business days (shows in UI, PDF, and Excel), and a driver tasks system ().
+A React PWA connected to Supabase. Features include GPS clock-ins, Task management, PDF/Excel Reports, and Web Push notifications. Recently updated with comprehensive overnight-shift support (shifts crossing midnight), robust geolocation fallbacks (clickable Google Maps links in exports), and heavily optimized Supabase Realtime subscriptions to dramatically reduce PostgREST egress. 
 
 **Last working item**: 
-    - Last item agent was working: Debugging a critical bug where  (tasks) created by staff/chofer () are not showing up for the admin. The agent investigated via bash/curl and found that the  table is entirely empty (), meaning the frontend insert is either failing silently or being blocked by Supabase RLS.
-    - Status: IN PROGRESS
-    - Agent Testing Done: N (Attempted bash test but failed due to syntax error).
-    - Which testing method agent to use? testing_agent (MANDATORY per system reminder after applying the bug fix).
+    - Last item agent was working: Implementation of Phase 1 Supabase Egress Optimization. Replaced unfiltered global Realtime subscriptions with granular, debounced updates. Removed  polling for checklists. Consolidated  providers. Replaced  with explicit column fetching.
+    - Status: USER VERIFICATION PENDING
+    - Agent Testing Done: Y
+    - Which testing method agent to use? testing_agent (Used for admin panel verification).
     - User Testing Done: N
 
 **All Pending/In progress Issue list**:  
-  Issue 1: Tareas/Trabajos created by staff are not persisting to the database and not showing for admin (P0)
-     - Attempted fixes: The previous agent verified the table is empty via curl using the new admin credentials. Attempted a test insert via bash script but failed due to a  error in bash.
+  Issue 1: Verify Staff Flow E2E after Phase 1 Egress Optimization (P0)
+     - Attempted fixes: The agent fully optimized  with granular Realtime payloads but could not run an E2E test via  because staff test credentials (password) were not explicitly provided in the latest memory.
      - Next debug checklist: 
-        - Check the frontend insert payload in  or wherever  are created. Is it failing silently?
-        - Check  for RLS issues. Ensure  policies allow the user to insert their own records.
-        - Fix the insert logic and verify the network call succeeds.
-     - Why fix this issue and what will be achieved with the fix?: Core functionality; staff/drivers must be able to submit their work and admins must be able to view it.
-     - Status: IN PROGRESS
-     - Is recurring issue?: Y (Variant of the previous task visibility bug).
-     - Should Test frontend/backend/both after fix?: Both (Must use ).
-     - Blocked on other issue: None.
+        - Ask the user for the password to  or ask for permission to temporarily reset it.
+        - Run  to ensure clock-in/clock-out Realtime updates work perfectly on the staff  screen without reloading the entire page.
+     - Why fix this issue and what will be achieved with the fix?: Ensures the Phase 1 egress reduction didn't break the core functionality for staff members.
+     - Status: USER VERIFICATION PENDING
+     - Is recurring issue?: N
+     - Should Test frontend/backend/both after fix?: Frontend ()
+     - Blocked on other issue: Missing staff password.
+
+  Issue 2: Tareas/Trabajos created by staff not showing for admin (P2)
+     - Attempted fixes: Agent investigated this earlier in the session. Found out it's NOT a bug with database inserts. The admin Dashboard/Trabajos page defaults to the last 7 days filter, and the reported task was older. User interrupted with a new critical bug before this was formally resolved.
+     - Next debug checklist: Confirm with the user if the explanation suffices, or if they want to change the default date range filter for the Trabajos page.
+     - Why fix this issue and what will be achieved with the fix?: Close out an older ticket.
+     - Status: USER VERIFICATION PENDING
+     - Is recurring issue?: Y
+     - Should Test frontend/backend/both after fix?: NA
+     - Blocked on other issue: None
 
 **In progress Task List**: 
-  None actively in progress (dynamic Cargos and Ausentes were finished but might need functional E2E smoke tests).
+  Task 1: Phase 2 Egress Optimization (RPC / SQL Views for Reports) (P1)
+     - Where to resume: Wait for the user to confirm the egress drop over 24-48 hours from Phase 1. Once authorized, move calculations (totals, delays, absences) from the frontend ( over all records) to Supabase RPCs/Views so the client only downloads aggregated summaries.
+     - What will be achieved with this?: Massively speeds up report generation and reduces Egress for historical data.
+     - Status: BLOCKED (Waiting for user validation period of Phase 1).
+     - Should Test frontend/backend/both after fix?: Both
+     - Blocked on something: User approval after 24h monitoring.
 
 **Upcoming and Future Tasks**
   Task 1: Scheduled Push Notifications for Checklists (10 mins before & exact time) (P1) - Needs verification if  setup is working for the user.
@@ -41,96 +54,109 @@ A React PWA connected to Supabase. Features include GPS clock-ins, Task manageme
   Task 3: Automated E2E Testing (P2) - Full flow (Clock-ins, Excel generation, Tasks).
 
 **Completed work in this session**
-- Added Ausente feature for employees who don't clock in on Paraguayan business days (Mon-Fri) - reflected in UI, PDF, and Excel exports (DONE).
-- Dynamic Cargos (Roles) UI section completed in  with CRUD functionality and Stopwatch toggles (DONE).
--  updated with recent changes (DONE).
+- Bug fix: Overnight shifts (21:30 to 05:00) now correctly group into a single shift across midnight in UI and Reports without resetting the app. (DONE)
+- Bug fix: Missing geolocation in reports now falls back to GPS coordinates if reverse geocoding fails. (DONE)
+- Enhancement: Coordinates in PDF and Excel exports are now clickable links opening Google Maps. (DONE)
+- Audit: Full Read-Only Audit of Supabase PostgREST Egress. (DONE)
+- Phase 1 Egress Optimization: Granular Realtime handling, debounce, removed , and removed 60-second polling. (DONE)
 
 **Earlier issues found/mentioned but not fixed**
-None.
+None new.
 
 **Known issue recurrence from previous fork**
-  - Issue recurrence in previous fork: Webhooks/Triggers failing in Supabase due to missing user execution.
+  - Issue recurrence in previous fork: Webhooks/Triggers failing in Supabase due to missing user execution of  files.
   - Recurrence count: 4
-  - Status: USER VERIFICATION PENDING
-  - Note: You must frequently remind the user to run the custom  files (, , , ) in their Supabase Dashboard. 
+  - Status: RESOLVED
+  - Note: Agent verified schema structures manually this time.
 
 **Code Architecture**
 /app
 ├── frontend
 │   ├── public/ (manifest.json, sw.js)
 │   ├── src/
-│   │   ├── components/Layout/
-│   │   ├── lib/ (reportPdf.js, excelExport.js, supabase.js)
-│   │   ├── pages/admin/ (Config.jsx, Personal.jsx, Reports.jsx, Trabajos.jsx)
-│   │   └── pages/staff/ (Home.jsx, Tasks.jsx)
+│   │   ├── components/ (NotificationsBell.jsx, etc.)
+│   │   ├── contexts/ (Auth, Config)
+│   │   ├── hooks/ (useRealtime.js, useNotifications.js)
+│   │   ├── lib/ (realtime.js, reportPdf.js, excelExport.js, supabase.js)
+│   │   ├── pages/admin/ (Dashboard, Reports, Trabajos, Checklist, etc.)
+│   │   └── pages/staff/ (Home, Tasks, Checklist, History)
 │   └── package.json
 ├── supabase
-│   ├── 01_schema.sql to 15_cargos.sql
-├── vercel.json
+│   ├── *.sql (Schema, policies, triggers)
 ├── memory/PRD.md
 
 **Key Technical Concepts**
-React.js, PWA, Supabase (Auth, PostgreSQL DB, Realtime, RLS), Tailwind CSS.
+React.js, PWA, Supabase (Auth, PostgreSQL DB, Realtime subscriptions, PostgREST), Tailwind CSS, Frontend performance optimization.
 
 **key DB schema**
-  - : {id, email, nombre, rol, cedula, cargo, hora_entrada, hora_salida}
-  - : {id, user_id, detalle, cantidad, creado_por_admin, iniciado_en, finalizado_en, fecha}
-  - : {id, nombre, con_cronometro, created_at}
+  - : {id, user_id, tipo, fecha, hora, latitud, longitud, precision_m, direccion_geolocalizada, retraso_minutos}
+  - : {id, email, nombre, rol, activo}
+  - : {id, user_id, detalle, cantidad, iniciado_en, finalizado_en, fecha}
+  - : {id, user_id, fecha, completado}
 
 **changes in tech stack**
-  - None this session.
+  - None.
 
 **All files of reference** 
-  -  (Admin view of tasks)
-  -  (RLS policies for tasks)
-  -  (Cargos manager)
+  -  (NEW helper for granular Realtime payload application & debouncing).
+  -  (Optimized Realtime).
+  -  (Optimized Realtime for staff).
+  -  &  (Polling removed).
+  -  &  (Consolidated provider).
 
 **Areas that need refactoring**: 
-  -  and  are becoming complex.
+  -  and  logic is highly complex due to manual granular Realtime state handling.
 
 **key api endpoints**
-  - Supabase REST client (Standard JS SDK)
+  - Supabase REST client (Standard JS SDK) & Supabase Realtime WebSockets.
 
 **Critical Info for New Agent** 
   - **LANGUAGE:** Respond EXCLUSIVELY in Spanish.
-  - **TESTING REQUIREMENT:** You received a direct system reminder in the last prompt. After fixing the  insertion bug, you **MUST call the  subagent** to verify it against the reported issue before finishing. Do not verify purely by manual inspection.
-  - **NEW CREDENTIALS:** The admin password changed. Use  with password . For a test staff/driver account, use .
-  - **SUPABASE SQL:** Keep reminding the user to execute the SQL scripts. The bug might literally be because the user hasn't executed  properly, meaning the table exists but RLS is blocking inserts, or the table doesn't exist at all (though curl returned empty rather than a 404).
+  - **EGRESS PHASE 1 DEPLOYED:** Do not rewrite the Realtime granular logic or reinstate . Wait for the user to confirm egress metrics before starting Phase 2.
+  - **STAFF TESTING:** You need a staff password to run E2E on . Ask the user for it.
+  - **RESTORE POINT:** A git commit () was made prior to Phase 1 optimizations.
 
 **documents and test reports created in this job** 
-  -  (Updated)
+  - 
+  - 
+  - 
+  - 
+  - 
 
 **Last 10 User Messages and any pending HUMAN messages** 
- - Message 7: Requested finishing the 3 priorities and adding a new Ausente feature for non-clocked workdays in Paraguay, plus a list of unrun SQL scripts. (COMPLETED)
- - Message 53: Bug Report - Staff  loaded a task but it doesn't show in the admin panel. (IN PROGRESS)
- - Message 54: System Reminder to use  after fixing the bug.
- - Message 57: User provided new admin credentials ( / ) and reiterated the bug about  not showing up for the admin. (IN PROGRESS)
+ - Message 174: User authorized Phase 1 of the Egress Optimization plan (Fix Dashboard, Checklists, NotificationsBell, Home, remove select *, avoid hidden tab polling). (COMPLETED)
+ - Message 154: System reminder for testing.
+ - Message 153: User requested a massive Read-Only Audit of Supabase Egress (4.02GB / 273MB a day) to identify exactly what is causing it, explicitly without modifying anything yet. (COMPLETED)
+ - Message 152: System reminder for batching tools.
+ - Message 129: User approved enhancement: make geolocation clickeable to Google Maps in PDF and Excel. (COMPLETED)
+ - Message 128: System reminder for batching tools.
+ - Message 98: User reported a bug: Geolocations are sometimes blank in reports. Requested to never leave it blank because location is the most important feature. (COMPLETED)
+ - Message 97: System reminder for batching tools.
+ - Message 17: User reported a bug: Night shift employees (21:30 to 05:00) cross midnight, and the app resets, asking them to clock in again instead of clocking out. Requested report optimization for this. (COMPLETED)
+ *Pending Human Message*: The user needs to answer the agent's last question: Do they want to provide staff credentials for E2E testing of Phase 1, or proceed directly to Phase 2 after monitoring Egress?
 
 **Project Health Check:**
-- Broken:  table inserts (either failing frontend or blocked by Supabase).
+- Broken: None.
 - Mocked: Scheduled Push Notifications ().
 
 **3rd Party Integrations** 
   - Supabase (Database, Auth, Realtime) — requires User API Key.
 
 **Testing status**
-  - Testing agent used after significant changes: NO (Required for the current bug).
+  - Testing agent used after significant changes: YES (Admin flow verified 100%).
   - Troubleshoot agent used after agent stuck in loop: NO
-  - Test files created: []
-  - Known regressions:  inserts failing.
+  - Test files created: , , 
+  - Known regressions: None known, but staff E2E testing pending credentials.
 
 **Credentials to test flow:**
  - Admin:  / 
- - Chofer/Staff: 
+ - Chofer/Staff:  (Agent needs password).
 
 **What agent forgot to execute**
-- The agent was trying to debug the  insertion issue but made a syntax error in their bash curl script (), causing the diagnostic to fail. The agent needs to properly inspect the frontend insertion payload and Supabase RLS, fix the issue, and call .
+- The agent successfully implemented Phase 1 but could not fully E2E test the staff  file because the staff test password was not readily available/verified in the latest steps.
 
 **Debugging checklist for current issue**
-    Issue: Staff  are not saving to the DB / not visible to admin.
+    Issue: Staff Flow Unverified post-Phase 1 Egress Opt.
     Frontend files to check: 
-      -  (Check the Supabase  logic for ).
-    Database/Backend to check:
-      -  (Check if RLS allows  for role /).
-      - Verify if the user has actually run the SQL scripts. If not, the insert will fail because the table doesn't exist or lacks policies.
-    Next Step: Login with the staff credentials, attempt to create a task via screenshot tool/curl, check network logs for the failure reason, fix it, then run .</analysis>
+      - 
+    Next Step: Request staff credentials from user -> run  to simulate staff clocking in/out -> verify Realtime granular updates handle  correctly without crashing or requiring a hard refresh.</analysis>
